@@ -247,6 +247,7 @@ export function Sidebar() {
               <Link
                 key={item.name}
                 href={item.href}
+                prefetch={false}
                 className={`nav-item ${isActive ? 'active' : ''}`}
                 onClick={isMobile ? closeMenu : undefined}
               >

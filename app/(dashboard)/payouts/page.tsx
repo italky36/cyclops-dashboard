@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
 
@@ -86,7 +86,29 @@ export default function PayoutsPage() {
   // Beneficiary name mapping
   const [beneficiaryNames, setBeneficiaryNames] = useState<Record<string, string>>({});
 
+  const inFlight = useRef(new Set<string>());
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  const fetchWithTimeout = async (input: RequestInfo, init?: RequestInit) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(input, { ...init, signal: controller.signal });
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
   const loadBeneficiaries = useCallback(async () => {
+    if (inFlight.current.has('beneficiaries')) return;
+    inFlight.current.add('beneficiaries');
     try {
       const response = await listBeneficiaries({ is_active: true });
       if (Array.isArray(response.result)) {
@@ -96,69 +118,98 @@ export default function PayoutsPage() {
           names[b.beneficiary_id] = b.name ||
             (b.first_name && b.last_name ? `${b.last_name} ${b.first_name}` : b.inn);
         });
-        setBeneficiaryNames(names);
+        if (isMounted.current) {
+          setBeneficiaryNames(names);
+        }
       }
     } catch (error) {
       console.error('Failed to load beneficiaries:', error);
+    } finally {
+      inFlight.current.delete('beneficiaries');
     }
   }, [listBeneficiaries]);
 
-  const loadBeneficiaryIds = async () => {
+  const loadBeneficiaryIds = useCallback(async () => {
+    if (inFlight.current.has('beneficiary_ids')) return;
+    inFlight.current.add('beneficiary_ids');
     try {
-      const response = await fetch('/api/payouts?action=beneficiaries_with_machines');
+      const response = await fetchWithTimeout('/api/payouts?action=beneficiaries_with_machines');
       const data = await response.json();
-      if (data.beneficiary_ids) {
+      if (data.beneficiary_ids && isMounted.current) {
         setBeneficiaryIds(data.beneficiary_ids);
       }
     } catch (error) {
       console.error('Failed to load beneficiary IDs:', error);
+    } finally {
+      inFlight.current.delete('beneficiary_ids');
     }
-  };
+  }, []);
 
-  const loadPayoutHistory = async () => {
+  const loadPayoutHistory = useCallback(async () => {
+    if (inFlight.current.has('history')) return;
+    inFlight.current.add('history');
     setIsLoadingHistory(true);
     try {
       const params = new URLSearchParams({ action: 'history' });
       if (historyFilter !== 'all') {
         params.set('status', historyFilter);
       }
-      const response = await fetch(`/api/payouts?${params}`);
+      const response = await fetchWithTimeout(`/api/payouts?${params}`);
       const data = await response.json();
-      if (data.payouts) {
+      if (data.payouts && isMounted.current) {
         setPayouts(data.payouts);
       }
     } catch (error) {
       console.error('Failed to load payout history:', error);
     } finally {
-      setIsLoadingHistory(false);
+      if (isMounted.current) {
+        setIsLoadingHistory(false);
+      }
+      inFlight.current.delete('history');
     }
-  };
+  }, [historyFilter]);
 
-  const loadSchedule = async () => {
+  const loadSchedule = useCallback(async () => {
+    if (inFlight.current.has('schedule')) return;
+    inFlight.current.add('schedule');
     try {
-      const response = await fetch('/api/payouts?action=schedule');
+      const response = await fetchWithTimeout('/api/payouts?action=schedule');
       const data = await response.json();
-      if (data.schedule) {
+      if (data.schedule && isMounted.current) {
         setSchedule(data.schedule);
         setCronExpression(data.schedule.cron_expression);
         setIsScheduleEnabled(data.schedule.is_enabled);
       }
     } catch (error) {
       console.error('Failed to load schedule:', error);
+    } finally {
+      inFlight.current.delete('schedule');
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadBeneficiaries();
-    loadBeneficiaryIds();
-    loadSchedule();
-  }, [loadBeneficiaries]);
+    if (activeTab === 'manual') {
+      loadBeneficiaries();
+      loadBeneficiaryIds();
+      return;
+    }
+
+    if (activeTab === 'history') {
+      loadBeneficiaries();
+      loadPayoutHistory();
+      return;
+    }
+
+    if (activeTab === 'schedule') {
+      loadSchedule();
+    }
+  }, [activeTab, loadBeneficiaries, loadBeneficiaryIds, loadPayoutHistory, loadSchedule]);
 
   useEffect(() => {
     if (activeTab === 'history') {
       loadPayoutHistory();
     }
-  }, [activeTab, historyFilter]);
+  }, [activeTab, loadPayoutHistory]);
 
   const handleCalculate = async () => {
     if (!selectedBeneficiary) return;
