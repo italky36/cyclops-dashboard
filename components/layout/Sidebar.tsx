@@ -32,6 +32,18 @@ const navigation = [
     ),
   },
   {
+    name: 'Автоматы',
+    href: '/machines',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="2" width="18" height="20" rx="2" />
+        <line x1="7" y1="7" x2="17" y2="7" />
+        <line x1="7" y1="12" x2="17" y2="12" />
+        <line x1="7" y1="17" x2="13" y2="17" />
+      </svg>
+    ),
+  },
+  {
     name: 'Виртуальные счета',
     href: '/virtual-accounts',
     icon: (
