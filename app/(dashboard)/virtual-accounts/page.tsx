@@ -56,7 +56,10 @@ export default function VirtualAccountsPage() {
         cyclops.listBeneficiaries({ is_active: true }),
       ]);
 
-      const accountIds = accountsRes.result?.virtual_accounts;
+      const result = accountsRes.result as Record<string, unknown> | undefined;
+      const accountIds = result && 'virtual_accounts' in result
+        ? (result as { virtual_accounts?: unknown }).virtual_accounts
+        : undefined;
       if (Array.isArray(accountIds) && accountIds.length > 0) {
         const accountDetails = await Promise.all(
           accountIds.map(async (accountId: string) => {
