@@ -20,9 +20,15 @@ export default function LoginPage() {
     const loadStatus = async () => {
       try {
         const response = await fetch('/api/auth/status');
+        if (!response.ok) {
+          if (active) {
+            setHasUsers(true);
+          }
+          return;
+        }
         const data = await response.json();
         if (active) {
-          setHasUsers(Boolean(data.hasUsers));
+          setHasUsers(data.hasUsers === true);
         }
       } catch {
         if (active) {
