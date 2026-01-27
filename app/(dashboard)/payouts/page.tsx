@@ -88,6 +88,7 @@ export default function PayoutsPage() {
 
   const inFlight = useRef(new Set<string>());
   const isMounted = useRef(true);
+  const loadedTabs = useRef({ manual: false, history: false, schedule: false });
 
   useEffect(() => {
     return () => {
@@ -189,19 +190,28 @@ export default function PayoutsPage() {
 
   useEffect(() => {
     if (activeTab === 'manual') {
-      loadBeneficiaries();
-      loadBeneficiaryIds();
+      if (!loadedTabs.current.manual) {
+        loadedTabs.current.manual = true;
+        loadBeneficiaries();
+        loadBeneficiaryIds();
+      }
       return;
     }
 
     if (activeTab === 'history') {
-      loadBeneficiaries();
-      loadPayoutHistory();
+      if (!loadedTabs.current.history) {
+        loadedTabs.current.history = true;
+        loadBeneficiaries();
+        loadPayoutHistory();
+      }
       return;
     }
 
     if (activeTab === 'schedule') {
-      loadSchedule();
+      if (!loadedTabs.current.schedule) {
+        loadedTabs.current.schedule = true;
+        loadSchedule();
+      }
     }
   }, [activeTab, loadBeneficiaries, loadBeneficiaryIds, loadPayoutHistory, loadSchedule]);
 
