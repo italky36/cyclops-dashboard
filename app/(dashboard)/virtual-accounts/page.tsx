@@ -56,10 +56,7 @@ export default function VirtualAccountsPage() {
         cyclops.listBeneficiaries({ is_active: true }),
       ]);
 
-      const result = accountsRes.result as Record<string, unknown> | undefined;
-      const accountIds = result && 'virtual_accounts' in result
-        ? (result as { virtual_accounts?: unknown }).virtual_accounts
-        : undefined;
+      const accountIds = accountsRes.result?.virtual_accounts;
       if (Array.isArray(accountIds) && accountIds.length > 0) {
         const accountDetails = await Promise.all(
           accountIds.map(async (accountId: string) => {
@@ -84,10 +81,7 @@ export default function VirtualAccountsPage() {
       } else {
         setAccounts([]);
       }
-      const beneficiariesResult = beneficiariesRes.result as Record<string, unknown> | undefined;
-      const beneficiariesList = beneficiariesResult && 'beneficiaries' in beneficiariesResult
-        ? (beneficiariesResult as { beneficiaries?: unknown }).beneficiaries
-        : undefined;
+      const beneficiariesList = beneficiariesRes.result?.beneficiaries;
       if (Array.isArray(beneficiariesList)) {
         const mapped = beneficiariesList.map((b: Beneficiary) => {
           const beneficiaryId = b.beneficiary_id || b.id || '';

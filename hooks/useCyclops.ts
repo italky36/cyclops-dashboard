@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import type { Layer, JsonRpcResponse } from '@/types/cyclops';
+import type {
+  Layer,
+  JsonRpcResponse,
+  ListBeneficiariesResult,
+  GetBeneficiaryResult,
+  ListVirtualAccountsResult,
+  GetVirtualAccountResult,
+} from '@/types/cyclops';
 
 interface UseCyclopsOptions {
   layer: Layer;
@@ -174,13 +181,13 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   );
 
   const getBeneficiary = useCallback(
-    (beneficiary_id: string) => call('get_beneficiary', { beneficiary_id }),
+    (beneficiary_id: string) => call<GetBeneficiaryResult>('get_beneficiary', { beneficiary_id }),
     [call]
   );
 
   const listBeneficiaries = useCallback(
     (filters?: { is_active?: boolean; legal_type?: 'F' | 'I' | 'J'; inn?: string }) =>
-      call('list_beneficiary', {
+      call<ListBeneficiariesResult>('list_beneficiary', {
         page: 1,
         per_page: 100,
         filters: filters || {},
@@ -209,7 +216,8 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   );
 
   const getVirtualAccount = useCallback(
-    (virtual_account: string) => call('get_virtual_account', { virtual_account }),
+    (virtual_account: string) =>
+      call<GetVirtualAccountResult>('get_virtual_account', { virtual_account }),
     [call]
   );
 
@@ -222,7 +230,7 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
         inn?: string;
       };
     }) =>
-      call('list_virtual_account', (() => {
+      call<ListVirtualAccountsResult>('list_virtual_account', (() => {
         const beneficiary = filters?.beneficiary;
         const hasBeneficiaryFilters = beneficiary && Object.keys(beneficiary).length > 0;
         const params: Record<string, unknown> = {

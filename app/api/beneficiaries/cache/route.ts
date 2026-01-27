@@ -10,6 +10,7 @@ import {
   upsertBeneficiaryFromDetail,
   getBeneficiariesLastSyncAt,
 } from '@/lib/beneficiaries-cache';
+import type { GetBeneficiaryResult, ListBeneficiariesResult } from '@/types/cyclops';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -90,16 +91,13 @@ export async function POST(request: NextRequest) {
       }
 
       const client = await getClient(layer);
-      const response = await client.call('list_beneficiary', {
+      const response = await client.call<ListBeneficiariesResult>('list_beneficiary', {
         page: 1,
         per_page: 100,
         filters: body?.filters || {},
       });
 
-      const responseResult = response?.result as Record<string, unknown> | undefined;
-      const list = responseResult && 'beneficiaries' in responseResult
-        ? (responseResult as { beneficiaries?: unknown }).beneficiaries
-        : undefined;
+      const list = response?.result?.beneficiaries;
       if (Array.isArray(list)) {
         upsertBeneficiariesFromList(list);
       }
@@ -117,8 +115,8 @@ export async function POST(request: NextRequest) {
       }
 
       const client = await getClient(layer);
-      const response = await client.call('get_beneficiary', { beneficiary_id });
-      const detail = response?.result?.beneficiary || response?.result;
+      const response = await client.call<GetBeneficiaryResult>('get_beneficiary', { beneficiary_id });
+      const detail = response?.result?.beneficiary;
       if (detail) {
         upsertBeneficiaryFromDetail(detail);
       }

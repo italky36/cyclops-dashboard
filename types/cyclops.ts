@@ -80,6 +80,87 @@ export interface BeneficiaryResponse {
   created_at: string;
 }
 
+export interface BeneficiaryListItem {
+  id: string;
+  inn: string;
+  is_active: boolean;
+  legal_type: 'F' | 'I' | 'J';
+  nominal_account_code?: string;
+  nominal_account_bic?: string;
+  beneficiary_data?: {
+    name?: string;
+    first_name?: string;
+    middle_name?: string;
+    last_name?: string;
+    kpp?: string;
+    ogrn?: string;
+    ogrnip?: string;
+    birth_date?: string;
+  };
+  is_added_to_ms?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ListBeneficiariesResult {
+  beneficiaries: BeneficiaryListItem[];
+  meta?: {
+    total?: number;
+    page?: {
+      current_page?: number;
+      per_page?: number;
+    };
+  };
+}
+
+export interface BeneficiaryDetail {
+  id: string;
+  inn: string;
+  is_active: boolean;
+  legal_type: 'F' | 'I' | 'J';
+  ogrn?: string;
+  ogrnip?: string;
+  beneficiary_data?: {
+    name?: string;
+    first_name?: string;
+    middle_name?: string;
+    last_name?: string;
+    kpp?: string;
+    birth_date?: string;
+    birth_place?: string;
+    passport_series?: string;
+    passport_number?: string;
+    passport_date?: string;
+    registration_address?: string;
+    resident?: boolean;
+    reg_country_code?: string;
+    tax_resident?: boolean;
+  };
+  created_at?: string;
+  updated_at?: string;
+  nominal_account?: {
+    code?: string;
+    bic?: string;
+  };
+  is_added_to_ms?: boolean;
+}
+
+export interface GetBeneficiaryResult {
+  beneficiary: BeneficiaryDetail;
+  nominal_account?: {
+    code?: string;
+    bic?: string;
+  };
+  last_contract_offer?: {
+    id?: string;
+    type?: string;
+    success_added?: boolean;
+    success_added_desc?: string;
+  };
+  permission?: boolean;
+  permission_description?: string | null;
+}
+
 // Virtual Account Types
 export type VirtualAccountType = 'standard' | 'for_ndfl';
 
@@ -95,6 +176,14 @@ export interface VirtualAccount {
 export interface CreateVirtualAccountParams {
   beneficiary_id: string;
   type: VirtualAccountType;
+}
+
+export interface ListVirtualAccountsResult {
+  virtual_accounts: string[];
+}
+
+export interface GetVirtualAccountResult {
+  virtual_account: VirtualAccount;
 }
 
 // Deal Types

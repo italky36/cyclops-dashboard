@@ -73,10 +73,7 @@ export default function PaymentsPage() {
         setPayments(filtered);
       }
 
-      const accountsResult = accountsRes.result as Record<string, unknown> | undefined;
-      const accountIds = accountsResult && 'virtual_accounts' in accountsResult
-        ? (accountsResult as { virtual_accounts?: unknown }).virtual_accounts
-        : undefined;
+      const accountIds = accountsRes.result?.virtual_accounts;
       if (Array.isArray(accountIds)) {
         setVirtualAccounts(accountIds.map((id: string) => ({ virtual_account_id: id })));
       }

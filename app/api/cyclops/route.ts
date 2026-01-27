@@ -6,7 +6,7 @@ import {
   getCachedBeneficiariesByIds,
   mapCachedToApi,
 } from '@/lib/beneficiaries-cache';
-import type { Layer } from '@/types/cyclops';
+import type { Layer, GetBeneficiaryResult, ListBeneficiariesResult, JsonRpcResponse } from '@/types/cyclops';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -167,24 +167,32 @@ export async function POST(request: NextRequest) {
     const client = await getClient(layer);
     const result = await client.call(method, params || {});
 
-    if (method === 'list_beneficiary' && result?.result && Array.isArray(result.result.beneficiaries)) {
+    if (method === 'list_beneficiary') {
       try {
-        const list = result.result.beneficiaries as Array<Record<string, unknown>>;
-        upsertBeneficiariesFromList(list as any[]);
-        const ids = list
-          .map((b: any) => String(b.id || b.beneficiary_id || ''))
-          .filter((id) => id && id !== 'undefined');
-        const cached = getCachedBeneficiariesByIds(ids);
-        result.result.beneficiaries = mapCachedToApi(list as any[], cached) as any;
+        const typed = result as JsonRpcResponse<ListBeneficiariesResult>;
+        const list = typed.result?.beneficiaries;
+        if (Array.isArray(list)) {
+          upsertBeneficiariesFromList(list as any[]);
+          const ids = list
+            .map((b: any) => String(b.id || b.beneficiary_id || ''))
+            .filter((id) => id && id !== 'undefined');
+          const cached = getCachedBeneficiariesByIds(ids);
+          if (typed.result) {
+            typed.result.beneficiaries = mapCachedToApi(list as any[], cached) as any;
+          }
+        }
       } catch (cacheError) {
         console.error('[Cyclops API] cache list_beneficiary failed:', cacheError);
       }
     }
 
-    if (method === 'get_beneficiary' && result?.result) {
+    if (method === 'get_beneficiary') {
       try {
-        const detail = (result.result as any).beneficiary || result.result;
-        upsertBeneficiaryFromDetail(detail);
+        const typed = result as JsonRpcResponse<GetBeneficiaryResult>;
+        const detail = typed.result?.beneficiary;
+        if (detail) {
+          upsertBeneficiaryFromDetail(detail as any);
+        }
       } catch (cacheError) {
         console.error('[Cyclops API] cache get_beneficiary failed:', cacheError);
       }

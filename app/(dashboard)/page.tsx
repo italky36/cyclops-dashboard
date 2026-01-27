@@ -51,15 +51,11 @@ export default function DashboardPage() {
         ]);
 
         // Подсчёт статистики из ответов
-        const beneficiariesResult = beneficiariesRes.result as Record<string, unknown> | undefined;
-        const beneficiariesList = beneficiariesResult && 'beneficiaries' in beneficiariesResult
-          ? (beneficiariesResult as { beneficiaries?: unknown }).beneficiaries
-          : undefined;
+        const beneficiariesList = beneficiariesRes.result?.beneficiaries;
         const beneficiaries = Array.isArray(beneficiariesList)
           ? beneficiariesList.length : 0;
-        const accountsResult = accountsRes.result as Record<string, unknown> | undefined;
-        const accountIds = accountsResult && 'virtual_accounts' in accountsResult && Array.isArray((accountsResult as any).virtual_accounts)
-          ? (accountsResult as any).virtual_accounts
+        const accountIds = Array.isArray(accountsRes.result?.virtual_accounts)
+          ? accountsRes.result.virtual_accounts
           : [];
         const virtualAccounts = accountIds.length;
         const deals = Array.isArray(dealsRes.result)
@@ -74,10 +70,7 @@ export default function DashboardPage() {
             accountIds.map(async (accountId: string) => {
               try {
                 const detailsRes = await cyclops.getVirtualAccount(accountId);
-                const detailsResult = detailsRes.result as Record<string, unknown> | undefined;
-                return detailsResult && 'virtual_account' in detailsResult
-                  ? (detailsResult as { virtual_account?: unknown }).virtual_account || null
-                  : null;
+                return detailsRes.result?.virtual_account || null;
               } catch {
                 return null;
               }

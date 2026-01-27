@@ -61,19 +61,13 @@ export default function NewDealPage() {
           cyclops.listBanksSBP(),
         ]);
 
-        const accountsResult = accountsRes.result as Record<string, unknown> | undefined;
-        const accountIds = accountsResult && 'virtual_accounts' in accountsResult
-          ? (accountsResult as { virtual_accounts?: unknown }).virtual_accounts
-          : undefined;
+        const accountIds = accountsRes.result?.virtual_accounts;
         if (Array.isArray(accountIds) && accountIds.length > 0) {
           const accountDetails = await Promise.all(
             accountIds.map(async (accountId: string) => {
               try {
                 const detailsRes = await cyclops.getVirtualAccount(accountId);
-                const detailsResult = detailsRes.result as Record<string, unknown> | undefined;
-                const details = detailsResult && 'virtual_account' in detailsResult
-                  ? (detailsResult as { virtual_account?: any }).virtual_account
-                  : undefined;
+                const details = detailsRes.result?.virtual_account;
                 if (!details) return null;
                 return {
                   virtual_account_id: details.code || accountId,
