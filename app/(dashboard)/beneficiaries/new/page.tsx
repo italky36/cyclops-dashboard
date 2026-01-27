@@ -23,6 +23,10 @@ export default function NewBeneficiaryPage() {
     inn: '',
     name: '',
     kpp: '',
+    ogrn: '',
+    nominal_account_code: '',
+    nominal_account_bic: '',
+    is_active_activity: true,
   });
 
   // ИП fields
@@ -87,8 +91,17 @@ export default function NewBeneficiaryPage() {
       if (!validateDigits(ulData.inn, 10)) {
         errors.ul_inn = 'ИНН должен содержать 10 цифр';
       }
+      if (!validateOptionalDigits(ulData.nominal_account_code, 20)) {
+        errors.ul_nominal_account_code = 'Номер счёта должен содержать 20 цифр';
+      }
+      if (!validateOptionalDigits(ulData.nominal_account_bic, 9)) {
+        errors.ul_nominal_account_bic = 'БИК должен содержать 9 цифр';
+      }
       if (!validateDigits(ulData.kpp, 9)) {
         errors.ul_kpp = 'КПП должен содержать 9 цифр';
+      }
+      if (ulData.ogrn && !/^(?:\d{13}|\d{15})$/.test(ulData.ogrn)) {
+        errors.ul_ogrn = 'ОГРН должен содержать 13 или 15 цифр';
       }
       if (!ulData.name.trim()) {
         errors.ul_name = 'Укажите наименование';
@@ -176,7 +189,17 @@ export default function NewBeneficiaryPage() {
 
       switch (type) {
         case 'ul':
-          response = await cyclops.createBeneficiaryUL(ulData);
+          response = await cyclops.createBeneficiaryUL({
+            inn: ulData.inn,
+            nominal_account_code: ulData.nominal_account_code || undefined,
+            nominal_account_bic: ulData.nominal_account_bic || undefined,
+            beneficiary_data: {
+              name: ulData.name,
+              kpp: ulData.kpp,
+              ogrn: ulData.ogrn || undefined,
+              is_active_activity: ulData.is_active_activity,
+            },
+          });
           beneficiaryName = ulData.name;
           break;
         case 'ip':
@@ -290,6 +313,42 @@ export default function NewBeneficiaryPage() {
           <div className="form-fields">
             <div className="form-row">
               <div className="form-group">
+                <label className="form-label">Номер номинального счёта</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.ul_nominal_account_code ? 'input-error' : ''}`}
+                  placeholder="20 цифр (опционально)"
+                  maxLength={20}
+                  value={ulData.nominal_account_code}
+                  onChange={(e) => {
+                    setUlData({ ...ulData, nominal_account_code: digitsOnly(e.target.value).slice(0, 20) });
+                    clearFieldError('ul_nominal_account_code');
+                  }}
+                />
+                {fieldErrors.ul_nominal_account_code && (
+                  <span className="form-error">{fieldErrors.ul_nominal_account_code}</span>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">БИК номинального счёта</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.ul_nominal_account_bic ? 'input-error' : ''}`}
+                  placeholder="9 цифр (опционально)"
+                  maxLength={9}
+                  value={ulData.nominal_account_bic}
+                  onChange={(e) => {
+                    setUlData({ ...ulData, nominal_account_bic: digitsOnly(e.target.value).slice(0, 9) });
+                    clearFieldError('ul_nominal_account_bic');
+                  }}
+                />
+                {fieldErrors.ul_nominal_account_bic && (
+                  <span className="form-error">{fieldErrors.ul_nominal_account_bic}</span>
+                )}
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
                 <label className="form-label">ИНН *</label>
                 <input
                   type="text"
@@ -337,6 +396,34 @@ export default function NewBeneficiaryPage() {
               />
               <p className="form-hint">Должно совпадать с данными ЕГРЮЛ</p>
               {fieldErrors.ul_name && <span className="form-error">{fieldErrors.ul_name}</span>}
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">ОГРН</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.ul_ogrn ? 'input-error' : ''}`}
+                  placeholder="13 или 15 цифр (опционально)"
+                  maxLength={15}
+                  value={ulData.ogrn}
+                  onChange={(e) => {
+                    setUlData({ ...ulData, ogrn: digitsOnly(e.target.value).slice(0, 15) });
+                    clearFieldError('ul_ogrn');
+                  }}
+                />
+                {fieldErrors.ul_ogrn && <span className="form-error">{fieldErrors.ul_ogrn}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Основной доход от активной деятельности</label>
+                <label className="form-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={ulData.is_active_activity}
+                    onChange={(e) => setUlData({ ...ulData, is_active_activity: e.target.checked })}
+                  />
+                  <span>Более 50% доходов от активной деятельности</span>
+                </label>
+              </div>
             </div>
           </div>
         )}

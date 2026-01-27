@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CyclopsClient } from '@/lib/cyclops-client';
+import {
+  upsertBeneficiariesFromList,
+  upsertBeneficiaryFromDetail,
+  getCachedBeneficiariesByIds,
+  mapCachedToApi,
+} from '@/lib/beneficiaries-cache';
 import type { Layer } from '@/types/cyclops';
 import fs from 'fs/promises';
 import path from 'path';
@@ -149,7 +155,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'development' || process.env.DEBUG_CYCLOPS === '1') {
       console.info('[Cyclops API] request', {
         layer,
         method,
@@ -161,11 +167,36 @@ export async function POST(request: NextRequest) {
     const client = await getClient(layer);
     const result = await client.call(method, params || {});
 
-    if (process.env.NODE_ENV === 'development' && result?.error) {
+    if (method === 'list_beneficiary' && result?.result && Array.isArray(result.result.beneficiaries)) {
+      try {
+        const list = result.result.beneficiaries as Array<Record<string, unknown>>;
+        upsertBeneficiariesFromList(list as any[]);
+        const ids = list
+          .map((b: any) => String(b.id || b.beneficiary_id || ''))
+          .filter((id) => id && id !== 'undefined');
+        const cached = getCachedBeneficiariesByIds(ids);
+        result.result.beneficiaries = mapCachedToApi(list as any[], cached) as any;
+      } catch (cacheError) {
+        console.error('[Cyclops API] cache list_beneficiary failed:', cacheError);
+      }
+    }
+
+    if (method === 'get_beneficiary' && result?.result) {
+      try {
+        const detail = (result.result as any).beneficiary || result.result;
+        upsertBeneficiaryFromDetail(detail);
+      } catch (cacheError) {
+        console.error('[Cyclops API] cache get_beneficiary failed:', cacheError);
+      }
+    }
+
+    if ((process.env.NODE_ENV === 'development' || process.env.DEBUG_CYCLOPS === '1') && result?.error) {
       console.info('[Cyclops API] response error', {
         layer,
         method,
+        params,
         error: result.error,
+        errorMeta: result.error?.meta ? JSON.stringify(result.error.meta) : null,
       });
     }
 

@@ -12,9 +12,12 @@ interface Beneficiary {
   name?: string;
   first_name?: string;
   last_name?: string;
+  middle_name?: string;
+  kpp?: string;
+  ogrnip?: string;
   is_active: boolean;
-  is_added_to_ms: boolean;
-  created_at: string;
+  is_added_to_ms?: boolean | null;
+  created_at?: string | null;
 }
 
 export default function BeneficiariesPage() {
@@ -27,28 +30,82 @@ export default function BeneficiariesPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [search, setSearch] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadBeneficiaries = async () => {
+  const mapLegalType = (value?: string) => {
+    if (value === 'F') return 'fl';
+    if (value === 'I') return 'ip';
+    if (value === 'J') return 'ul';
+    return value as Beneficiary['type'];
+  };
+
+  const normalizeBeneficiary = (b: Record<string, any>): Beneficiary => ({
+    beneficiary_id: b.beneficiary_id || b.id || '',
+    type: mapLegalType(b.type || b.legal_type) || 'ul',
+    inn: b.inn || '',
+    name: b.name || b.beneficiary_data?.name,
+    first_name: b.first_name || b.beneficiary_data?.first_name,
+    middle_name: b.middle_name || b.beneficiary_data?.middle_name,
+    last_name: b.last_name || b.beneficiary_data?.last_name,
+    kpp: b.kpp || b.beneficiary_data?.kpp,
+    ogrnip: b.ogrnip || b.beneficiary_data?.ogrnip,
+    is_active: b.is_active ?? true,
+    is_added_to_ms: typeof b.is_added_to_ms === 'boolean'
+      ? b.is_added_to_ms
+      : typeof b.is_added_to_ms === 'number'
+        ? b.is_added_to_ms === 1
+        : typeof b.is_added_to_ms === 'string'
+          ? b.is_added_to_ms === '1' || b.is_added_to_ms.toLowerCase() === 'true'
+          : null,
+    created_at: b.created_at || b.updated_at || null,
+  });
+
+  const formatDateSafe = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU');
+  };
+
+  const loadBeneficiaries = async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
     try {
-      const filters = filter === 'all' ? {} : { is_active: filter === 'active' };
-      const response = await cyclops.listBeneficiaries(filters);
-      const list = response.result?.beneficiaries;
+      if (forceRefresh) {
+        setIsRefreshing(true);
+        await fetch('/api/beneficiaries/cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'refresh_list',
+            layer,
+            filters: filter === 'all' ? {} : { is_active: filter === 'active' },
+          }),
+        });
+      }
+
+      const response = await fetch('/api/beneficiaries/cache');
+      const data = await response.json();
+      const list = data?.beneficiaries;
       if (Array.isArray(list)) {
-        setBeneficiaries(list);
+        let mapped = list.map(normalizeBeneficiary).filter((b) => b.beneficiary_id);
+        if (filter !== 'all') {
+          const activeFilter = filter === 'active';
+          mapped = mapped.filter((b) => b.is_active === activeFilter);
+        }
+        setBeneficiaries(mapped);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
       setError(message);
       console.error('Failed to load beneficiaries:', err);
     } finally {
+      setIsRefreshing(false);
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadBeneficiaries();
+    loadBeneficiaries(true);
   }, [layer, filter]);
 
   const handleToggleActive = async (beneficiary: Beneficiary) => {
@@ -71,6 +128,26 @@ export default function BeneficiariesPage() {
       await loadBeneficiaries();
     } catch (error) {
       console.error('Failed to toggle beneficiary:', error);
+    }
+  };
+
+  const handleRefreshStatus = async (beneficiaryId: string) => {
+    try {
+      setIsRefreshing(true);
+      await fetch('/api/beneficiaries/cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'refresh_one',
+          layer,
+          beneficiary_id: beneficiaryId,
+        }),
+      });
+      await loadBeneficiaries();
+    } catch (error) {
+      console.error('Failed to refresh beneficiary:', error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -107,13 +184,22 @@ export default function BeneficiariesPage() {
             Управление бенефициарами номинального счёта
           </p>
         </div>
-        <Link href="/beneficiaries/new" className="btn btn-primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Добавить
-        </Link>
+        <div className="header-actions">
+          <button
+            className="btn btn-secondary"
+            onClick={() => loadBeneficiaries(true)}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? 'Обновление...' : 'Обновить список'}
+          </button>
+          <Link href="/beneficiaries/new" className="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Добавить
+          </Link>
+        </div>
       </header>
 
       {/* Filters */}
@@ -238,14 +324,30 @@ export default function BeneficiariesPage() {
                       </span>
                     </td>
                     <td>
-                      {b.is_added_to_ms ? (
-                        <span className="badge badge-success">Добавлен</span>
-                      ) : (
-                        <span className="badge badge-warning">Ожидание</span>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {b.is_added_to_ms === null ? (
+                          <span className="badge badge-neutral">—</span>
+                        ) : b.is_added_to_ms ? (
+                          <span className="badge badge-success">Добавлен</span>
+                        ) : (
+                          <span className="badge badge-warning">Ожидание</span>
+                        )}
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => handleRefreshStatus(b.beneficiary_id)}
+                          title="Обновить статус"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M23 4v6h-6" />
+                            <path d="M1 20v-6h6" />
+                            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10" />
+                            <path d="M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                     <td>
-                      {new Date(b.created_at).toLocaleDateString('ru-RU')}
+                      {formatDateSafe(b.created_at)}
                     </td>
                     <td>
                       <div className="actions">
@@ -295,6 +397,12 @@ export default function BeneficiariesPage() {
           align-items: flex-start;
           justify-content: space-between;
           gap: 16px;
+          flex-wrap: wrap;
+        }
+
+        .header-actions {
+          display: flex;
+          gap: 12px;
           flex-wrap: wrap;
         }
 
@@ -385,7 +493,11 @@ export default function BeneficiariesPage() {
             align-items: stretch;
           }
 
-          .page-header > a {
+          .header-actions {
+            flex-direction: column;
+          }
+
+          .header-actions .btn {
             width: 100%;
           }
 

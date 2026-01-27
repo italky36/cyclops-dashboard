@@ -21,6 +21,14 @@ const requestCache = new Map<
   }
 >();
 
+const clearCacheByPrefix = (prefix: string) => {
+  for (const key of requestCache.keys()) {
+    if (key.startsWith(prefix)) {
+      requestCache.delete(key);
+    }
+  }
+};
+
 export function useCyclops({ layer }: UseCyclopsOptions) {
   const [state, setState] = useState<CyclopsState>({
     loading: false,
@@ -101,13 +109,26 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
 
   // Бенефициары
   const createBeneficiaryUL = useCallback(
-    (params: { inn: string; name: string; kpp: string }) =>
-      call('create_beneficiary_ul', params),
-    [call]
+    async (params: {
+      inn: string;
+      nominal_account_code?: string;
+      nominal_account_bic?: string;
+      beneficiary_data: {
+        name: string;
+        kpp: string;
+        ogrn?: string;
+        is_active_activity?: boolean;
+      };
+    }) => {
+      const result = await call('create_beneficiary_ul', params);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
   );
 
   const createBeneficiaryIP = useCallback(
-    (params: {
+    async (params: {
       inn: string;
       nominal_account_code?: string;
       nominal_account_bic?: string;
@@ -117,12 +138,16 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
         last_name: string;
         tax_resident?: boolean;
       };
-    }) => call('create_beneficiary_ip', params),
-    [call]
+    }) => {
+      const result = await call('create_beneficiary_ip', params);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
   );
 
   const createBeneficiaryFL = useCallback(
-    (params: {
+    async (params: {
       inn: string;
       nominal_account_code?: string;
       nominal_account_bic?: string;
@@ -140,8 +165,12 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
         reg_country_code?: string;
         tax_resident?: boolean;
       };
-    }) => call('create_beneficiary_fl', params),
-    [call]
+    }) => {
+      const result = await call('create_beneficiary_fl', params);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
   );
 
   const getBeneficiary = useCallback(

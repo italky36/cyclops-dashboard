@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
@@ -18,8 +18,8 @@ interface Beneficiary {
   ogrnip?: string;
   birth_date?: string;
   is_active: boolean;
-  is_added_to_ms: boolean;
-  created_at: string;
+  is_added_to_ms?: boolean | null;
+  created_at?: string | null;
 }
 
 interface VendingMachine {
@@ -44,7 +44,7 @@ export default function BeneficiaryDetailPage() {
 
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
-  const cyclops = useCyclops({ layer });
+  const { getBeneficiary } = useCyclops({ layer });
 
   const [beneficiary, setBeneficiary] = useState<Beneficiary | null>(null);
   const [machines, setMachines] = useState<VendingMachine[]>([]);
@@ -56,21 +56,81 @@ export default function BeneficiaryDetailPage() {
   const [commissionPercent, setCommissionPercent] = useState(10);
   const [isAssigning, setIsAssigning] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'machines'>('info');
+  const inFlight = useRef(new Set<string>());
+
+  const mapLegalType = (value?: string) => {
+    if (value === 'F') return 'fl';
+    if (value === 'I') return 'ip';
+    if (value === 'J') return 'ul';
+    return value as Beneficiary['type'];
+  };
+
+  const normalizeBeneficiary = (b: Record<string, any>): Beneficiary => ({
+    beneficiary_id: b.beneficiary_id || b.id || '',
+    type: mapLegalType(b.type || b.legal_type) || 'ul',
+    inn: b.inn || '',
+    name: b.name || b.beneficiary_data?.name,
+    first_name: b.first_name || b.beneficiary_data?.first_name,
+    middle_name: b.middle_name || b.beneficiary_data?.middle_name,
+    last_name: b.last_name || b.beneficiary_data?.last_name,
+    kpp: b.kpp || b.beneficiary_data?.kpp,
+    ogrnip: b.ogrnip || b.beneficiary_data?.ogrnip,
+    birth_date: b.birth_date || b.beneficiary_data?.birth_date,
+    is_active: b.is_active ?? true,
+    is_added_to_ms: typeof b.is_added_to_ms === 'boolean'
+      ? b.is_added_to_ms
+      : typeof b.is_added_to_ms === 'number'
+        ? b.is_added_to_ms === 1
+        : typeof b.is_added_to_ms === 'string'
+          ? b.is_added_to_ms === '1' || b.is_added_to_ms.toLowerCase() === 'true'
+          : null,
+    created_at: b.created_at || b.updated_at || null,
+  });
+
+  const formatDateSafe = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU');
+  };
 
   const loadBeneficiary = useCallback(async () => {
+    if (inFlight.current.has('beneficiary')) return;
+    inFlight.current.add('beneficiary');
+    if (!beneficiary_id || beneficiary_id === 'undefined') {
+      setIsLoading(false);
+      inFlight.current.delete('beneficiary');
+      return;
+    }
     try {
-      const response = await cyclops.getBeneficiary(beneficiary_id);
-      if (response.result) {
-        setBeneficiary(response.result as Beneficiary);
+      const response = await getBeneficiary(beneficiary_id);
+      const data = response.result?.beneficiary ?? response.result;
+      if (data) {
+        setBeneficiary(normalizeBeneficiary(data));
       }
+      await fetch('/api/beneficiaries/cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'refresh_one',
+          layer,
+          beneficiary_id,
+        }),
+      });
     } catch (error) {
       console.error('Failed to load beneficiary:', error);
     } finally {
       setIsLoading(false);
+      inFlight.current.delete('beneficiary');
     }
-  }, [cyclops, beneficiary_id]);
+  }, [getBeneficiary, beneficiary_id, layer]);
 
   const loadMachines = useCallback(async () => {
+    if (inFlight.current.has('machines')) return;
+    inFlight.current.add('machines');
+    if (!beneficiary_id || beneficiary_id === 'undefined') {
+      inFlight.current.delete('machines');
+      return;
+    }
     setIsMachinesLoading(true);
     try {
       const response = await fetch(`/api/assignments?action=by_beneficiary&beneficiary_id=${beneficiary_id}`);
@@ -82,10 +142,13 @@ export default function BeneficiaryDetailPage() {
       console.error('Failed to load machines:', error);
     } finally {
       setIsMachinesLoading(false);
+      inFlight.current.delete('machines');
     }
   }, [beneficiary_id]);
 
-  const loadAvailableMachines = async () => {
+  const loadAvailableMachines = useCallback(async () => {
+    if (inFlight.current.has('available_machines')) return;
+    inFlight.current.add('available_machines');
     try {
       const response = await fetch('/api/vendista?action=unassigned');
       const data = await response.json();
@@ -94,8 +157,10 @@ export default function BeneficiaryDetailPage() {
       }
     } catch (error) {
       console.error('Failed to load available machines:', error);
+    } finally {
+      inFlight.current.delete('available_machines');
     }
-  };
+  }, []);
 
   const syncMachines = async () => {
     try {
@@ -189,7 +254,7 @@ export default function BeneficiaryDetailPage() {
     loadBeneficiary();
     loadMachines();
     loadAvailableMachines();
-  }, [loadBeneficiary, loadMachines]);
+  }, [loadBeneficiary, loadMachines, loadAvailableMachines]);
 
   const getBeneficiaryName = () => {
     if (!beneficiary) return '';
@@ -313,17 +378,19 @@ export default function BeneficiaryDetailPage() {
             {beneficiary.birth_date && (
               <div className="info-item">
                 <span className="info-label">Дата рождения</span>
-                <span className="info-value">{new Date(beneficiary.birth_date).toLocaleDateString('ru-RU')}</span>
-              </div>
-            )}
-            <div className="info-item">
-              <span className="info-label">Дата создания</span>
-              <span className="info-value">{new Date(beneficiary.created_at).toLocaleDateString('ru-RU')}</span>
+              <span className="info-value">{formatDateSafe(beneficiary.birth_date)}</span>
             </div>
+          )}
+          <div className="info-item">
+            <span className="info-label">Дата создания</span>
+            <span className="info-value">{formatDateSafe(beneficiary.created_at)}</span>
+          </div>
             <div className="info-item">
               <span className="info-label">Мастер-система</span>
               <span className="info-value">
-                {beneficiary.is_added_to_ms ? (
+                {beneficiary.is_added_to_ms === null ? (
+                  <span className="badge badge-neutral">—</span>
+                ) : beneficiary.is_added_to_ms ? (
                   <span className="badge badge-success">Добавлен</span>
                 ) : (
                   <span className="badge badge-warning">Ожидание</span>

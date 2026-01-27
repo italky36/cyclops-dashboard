@@ -30,6 +30,30 @@ function ensureSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_login_attempts_user_time
       ON login_attempts (username, attempted_at);
 
+    CREATE TABLE IF NOT EXISTS beneficiaries_cache (
+      beneficiary_id TEXT PRIMARY KEY,
+      inn TEXT,
+      legal_type TEXT,
+      is_active INTEGER,
+      nominal_account_code TEXT,
+      nominal_account_bic TEXT,
+      name TEXT,
+      first_name TEXT,
+      middle_name TEXT,
+      last_name TEXT,
+      kpp TEXT,
+      ogrn TEXT,
+      ogrnip TEXT,
+      birth_date TEXT,
+      is_added_to_ms INTEGER,
+      created_at TEXT,
+      updated_at TEXT,
+      last_sync_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_beneficiaries_cache_inn
+      ON beneficiaries_cache (inn);
+
     -- ============ VENDISTA: ТОРГОВЫЕ АВТОМАТЫ ============
 
     CREATE TABLE IF NOT EXISTS vending_machines (
