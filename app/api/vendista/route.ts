@@ -76,19 +76,19 @@ export async function POST(request: NextRequest) {
 
     // Получение транзакций из Vendista
     if (action === 'fetch_transactions') {
-      const { machine_id, date_from, date_to } = body;
+      const { term_id, startDate, endDate } = body;
 
-      if (!date_from || !date_to) {
+      if (!term_id) {
         return NextResponse.json(
-          { error: 'date_from and date_to are required' },
+          { error: 'term_id is required (terminal_id from machine)' },
           { status: 400 }
         );
       }
 
       const transactions = await client.fetchTransactions({
-        machine_id,
-        date_from,
-        date_to,
+        term_id,
+        startDate,
+        endDate,
       });
 
       return NextResponse.json({

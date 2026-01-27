@@ -69,22 +69,42 @@ export class VendistaClient {
     path: string,
     params?: Record<string, unknown>
   ): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
+    const url = new URL(path, this.baseUrl);
 
-    console.info(`[Vendista] ${method} ${path}`, { params });
+    // Vendista требует токен как query параметр
+    url.searchParams.set("token", this.token);
+
+    // Добавляем остальные параметры в URL для GET запросов
+    if (method === "GET" && params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    console.info(`[Vendista] ${method} ${url.pathname}`, { params });
 
     try {
       const response = await axios({
         method,
-        url,
-        params: method === "GET" ? params : undefined,
+        url: url.toString(),
         data: method === "POST" ? params : undefined,
         headers: {
-          "Authorization": `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-          "Accept": "application/json",
+          "Accept": "text/plain",
         },
-        timeout: 30000,
+        timeout: 60000,
+        // Vendista может возвращать text/plain с JSON внутри
+        transformResponse: (data) => {
+          if (typeof data === "string") {
+            try {
+              return JSON.parse(data);
+            } catch {
+              return data;
+            }
+          }
+          return data;
+        },
       });
 
       console.info(`[Vendista] Response status: ${response.status}`);
@@ -123,13 +143,28 @@ export class VendistaClient {
 
   /**
    * Получение транзакций (продаж) по автомату за период
+   * @param params.term_id - terminal_id автомата из Vendista (обязательно)
+   * @param params.startDate - начало периода в формате YYYY-MM-DD
+   * @param params.endDate - конец периода в формате YYYY-MM-DD
    */
   async fetchTransactions(params: {
-    machine_id?: string | number;
-    date_from?: string; // YYYY-MM-DD
-    date_to?: string;   // YYYY-MM-DD
+    term_id: string | number;
+    startDate?: string; // YYYY-MM-DD
+    endDate?: string;   // YYYY-MM-DD
   }): Promise<VendistaTransaction[]> {
-    const response = await this.request<unknown>("GET", "/transactions", params);
+    // Vendista API использует параметры: TermId, startDate, endDate
+    const requestParams: Record<string, unknown> = {
+      TermId: String(params.term_id),
+    };
+
+    if (params.startDate) {
+      requestParams.startDate = params.startDate;
+    }
+    if (params.endDate) {
+      requestParams.endDate = params.endDate;
+    }
+
+    const response = await this.request<unknown>("GET", "/transactions", requestParams);
     const parsed = vendistaTransactionsResponseSchema.safeParse(response);
 
     if (!parsed.success) {
@@ -147,23 +182,29 @@ export class VendistaClient {
 
   /**
    * Получение продаж по нескольким автоматам за период
+   * @param params.terminal_ids - массив terminal_id автоматов
    */
   async fetchTransactionsForMachines(params: {
-    machine_ids: (string | number)[];
-    date_from: string;
-    date_to: string;
+    terminal_ids: (string | number)[];
+    startDate: string;
+    endDate: string;
   }): Promise<VendistaTransaction[]> {
-    // Если API поддерживает batch-запрос - используем его
-    // Иначе делаем последовательные запросы
+    // Vendista API не поддерживает batch-запросы
+    // Делаем последовательные запросы для каждого автомата
     const allTransactions: VendistaTransaction[] = [];
 
-    for (const machine_id of params.machine_ids) {
-      const transactions = await this.fetchTransactions({
-        machine_id,
-        date_from: params.date_from,
-        date_to: params.date_to,
-      });
-      allTransactions.push(...transactions);
+    for (const term_id of params.terminal_ids) {
+      try {
+        const transactions = await this.fetchTransactions({
+          term_id,
+          startDate: params.startDate,
+          endDate: params.endDate,
+        });
+        allTransactions.push(...transactions);
+      } catch (error) {
+        console.error(`[Vendista] Failed to fetch transactions for terminal ${term_id}:`, error);
+        // Продолжаем для остальных автоматов
+      }
     }
 
     return allTransactions;

@@ -424,10 +424,13 @@ export function calculatePayout(
     }
 
     // Фильтруем транзакции по этому автомату за период
+    // Используем terminal_id для сопоставления (так как транзакции приходят по terminal_id)
     const machineTransactions = transactions.filter(t => {
-      const vendista_id = String(t.machine_id);
+      const transaction_term_id = String(t.machine_id);
       const txDate = t.date.split('T')[0];
-      return vendista_id === machine.vendista_id && txDate >= startDate && txDate <= now;
+      // Сопоставляем по terminal_id (если есть) или по vendista_id
+      const machine_term_id = machine.terminal_id || machine.vendista_id;
+      return transaction_term_id === machine_term_id && txDate >= startDate && txDate <= now;
     });
 
     const sales_amount = machineTransactions.reduce((sum, t) => sum + t.amount, 0);

@@ -106,20 +106,27 @@ export async function POST(request: NextRequest) {
 
       if (isVendistaConfigured()) {
         const client = createVendistaClient();
-        const vendista_ids = machines.map(m => m.vendista_id);
+        // Используем terminal_id для запроса транзакций
+        const terminal_ids = machines
+          .map(m => m.terminal_id)
+          .filter((id): id is string => id !== null && id !== undefined);
 
-        // Определяем период для запроса - берем широкий диапазон
-        const date_to = end_date || new Date().toISOString().split('T')[0];
-        const date_from = machines.reduce((earliest, m) => {
-          const assignedDate = m.assignment?.assigned_at.split('T')[0] || date_to;
-          return assignedDate < earliest ? assignedDate : earliest;
-        }, date_to);
+        if (terminal_ids.length === 0) {
+          console.warn('[Payouts] No terminal_ids found for machines');
+        } else {
+          // Определяем период для запроса - берем широкий диапазон
+          const endDate = end_date || new Date().toISOString().split('T')[0];
+          const startDate = machines.reduce((earliest, m) => {
+            const assignedDate = m.assignment?.assigned_at.split('T')[0] || endDate;
+            return assignedDate < earliest ? assignedDate : earliest;
+          }, endDate);
 
-        transactions = await client.fetchTransactionsForMachines({
-          machine_ids: vendista_ids,
-          date_from,
-          date_to,
-        });
+          transactions = await client.fetchTransactionsForMachines({
+            terminal_ids,
+            startDate,
+            endDate,
+          });
+        }
       }
 
       const calculation = calculatePayout(beneficiary_id, transactions, end_date);
@@ -148,19 +155,23 @@ export async function POST(request: NextRequest) {
 
       if (isVendistaConfigured()) {
         const client = createVendistaClient();
-        const vendista_ids = machines.map(m => m.vendista_id);
+        const terminal_ids = machines
+          .map(m => m.terminal_id)
+          .filter((id): id is string => id !== null && id !== undefined);
 
-        const date_to = end_date || new Date().toISOString().split('T')[0];
-        const date_from = machines.reduce((earliest, m) => {
-          const assignedDate = m.assignment?.assigned_at.split('T')[0] || date_to;
-          return assignedDate < earliest ? assignedDate : earliest;
-        }, date_to);
+        if (terminal_ids.length > 0) {
+          const endDate = end_date || new Date().toISOString().split('T')[0];
+          const startDate = machines.reduce((earliest, m) => {
+            const assignedDate = m.assignment?.assigned_at.split('T')[0] || endDate;
+            return assignedDate < earliest ? assignedDate : earliest;
+          }, endDate);
 
-        transactions = await client.fetchTransactionsForMachines({
-          machine_ids: vendista_ids,
-          date_from,
-          date_to,
-        });
+          transactions = await client.fetchTransactionsForMachines({
+            terminal_ids,
+            startDate,
+            endDate,
+          });
+        }
       }
 
       const calculation = calculatePayout(beneficiary_id, transactions, end_date);
@@ -245,19 +256,23 @@ export async function POST(request: NextRequest) {
 
           if (isVendistaConfigured()) {
             const client = createVendistaClient();
-            const vendista_ids = machines.map(m => m.vendista_id);
+            const terminal_ids = machines
+              .map(m => m.terminal_id)
+              .filter((id): id is string => id !== null && id !== undefined);
 
-            const date_to = new Date().toISOString().split('T')[0];
-            const date_from = machines.reduce((earliest, m) => {
-              const assignedDate = m.assignment?.assigned_at.split('T')[0] || date_to;
-              return assignedDate < earliest ? assignedDate : earliest;
-            }, date_to);
+            if (terminal_ids.length > 0) {
+              const endDate = new Date().toISOString().split('T')[0];
+              const startDate = machines.reduce((earliest, m) => {
+                const assignedDate = m.assignment?.assigned_at.split('T')[0] || endDate;
+                return assignedDate < earliest ? assignedDate : earliest;
+              }, endDate);
 
-            transactions = await client.fetchTransactionsForMachines({
-              machine_ids: vendista_ids,
-              date_from,
-              date_to,
-            });
+              transactions = await client.fetchTransactionsForMachines({
+                terminal_ids,
+                startDate,
+                endDate,
+              });
+            }
           }
 
           const calculation = calculatePayout(beneficiary_id, transactions);
