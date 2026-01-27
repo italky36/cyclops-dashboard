@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
 import { LayerSwitcher } from '@/components/ui/LayerSwitcher';
+import { useIsMobile, useBodyScrollLock } from '@/hooks/useMediaQuery';
 
 const navigation = [
   {
@@ -87,6 +89,35 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const isMobile = useIsMobile();
+  const [isOpen, setIsOpen] = useState(false);
+
+  // Блокируем скролл при открытом мобильном меню
+  useBodyScrollLock(isMobile && isOpen);
+
+  // Закрываем меню при изменении маршрута
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
+
+  // Закрываем меню при переходе на десктоп
+  useEffect(() => {
+    if (!isMobile) {
+      setIsOpen(false);
+    }
+  }, [isMobile]);
+
+  // Закрытие по Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen]);
 
   const handleLogout = async () => {
     try {
@@ -96,63 +127,224 @@ export function Sidebar() {
     }
   };
 
+  const toggleMenu = useCallback(() => {
+    setIsOpen(prev => !prev);
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    setIsOpen(false);
+  }, []);
+
   return (
-    <aside className="sidebar">
-      <div className="sidebar-header">
-        <div className="logo">
-          <div className="logo-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <circle cx="16" cy="16" r="14" fill="url(#logo-gradient)" />
+    <>
+      {/* Mobile Header */}
+      {isMobile && (
+        <header className="mobile-header">
+          <button
+            className="hamburger"
+            onClick={toggleMenu}
+            aria-label={isOpen ? 'Закрыть меню' : 'Открыть меню'}
+            aria-expanded={isOpen}
+          >
+            <span className={`hamburger-line ${isOpen ? 'open' : ''}`} />
+            <span className={`hamburger-line ${isOpen ? 'open' : ''}`} />
+            <span className={`hamburger-line ${isOpen ? 'open' : ''}`} />
+          </button>
+
+          <div className="mobile-logo">
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="14" fill="url(#logo-gradient-mobile)" />
               <path
                 d="M16 8C11.6 8 8 11.6 8 16s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8zm0 14c-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6-2.7 6-6 6z"
                 fill="white"
               />
               <circle cx="16" cy="16" r="3" fill="white" />
               <defs>
-                <linearGradient id="logo-gradient" x1="2" y1="2" x2="30" y2="30">
+                <linearGradient id="logo-gradient-mobile" x1="2" y1="2" x2="30" y2="30">
                   <stop stopColor="#6366f1" />
                   <stop offset="1" stopColor="#8b5cf6" />
                 </linearGradient>
               </defs>
             </svg>
+            <span className="mobile-logo-text">Cyclops</span>
           </div>
-          <div className="logo-text">
-            <span className="logo-name">Cyclops</span>
-            <span className="logo-sub">Dashboard</span>
+
+          <div className="mobile-header-spacer" />
+        </header>
+      )}
+
+      {/* Overlay для мобильного меню */}
+      {isMobile && isOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={closeMenu}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`sidebar ${isMobile ? 'mobile' : ''} ${isOpen ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <div className="logo">
+            <div className="logo-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="14" fill="url(#logo-gradient)" />
+                <path
+                  d="M16 8C11.6 8 8 11.6 8 16s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8zm0 14c-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6-2.7 6-6 6z"
+                  fill="white"
+                />
+                <circle cx="16" cy="16" r="3" fill="white" />
+                <defs>
+                  <linearGradient id="logo-gradient" x1="2" y1="2" x2="30" y2="30">
+                    <stop stopColor="#6366f1" />
+                    <stop offset="1" stopColor="#8b5cf6" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <div className="logo-text">
+              <span className="logo-name">Cyclops</span>
+              <span className="logo-sub">Dashboard</span>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="sidebar-layer">
-        <LayerSwitcher />
-      </div>
-
-      <nav className="sidebar-nav">
-        {navigation.map((item) => {
-          const isActive = pathname === item.href || 
-            (item.href !== '/' && pathname.startsWith(item.href));
-          
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`nav-item ${isActive ? 'active' : ''}`}
+          {isMobile && (
+            <button
+              className="close-btn"
+              onClick={closeMenu}
+              aria-label="Закрыть меню"
             >
-              <span className="nav-icon">{item.icon}</span>
-              <span className="nav-label">{item.name}</span>
-            </Link>
-          );
-        })}
-      </nav>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
 
-      <div className="sidebar-footer">
-        <button className="logout" type="button" onClick={handleLogout}>
-          Выйти
-        </button>
-        <div className="version">v1.0.0</div>
-      </div>
+        <div className="sidebar-layer">
+          <LayerSwitcher />
+        </div>
+
+        <nav className="sidebar-nav">
+          {navigation.map((item) => {
+            const isActive = pathname === item.href ||
+              (item.href !== '/' && pathname.startsWith(item.href));
+
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={`nav-item ${isActive ? 'active' : ''}`}
+                onClick={isMobile ? closeMenu : undefined}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-label">{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="sidebar-footer">
+          <button className="logout" type="button" onClick={handleLogout}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            <span>Выйти</span>
+          </button>
+          <div className="version">v1.0.0</div>
+        </div>
+      </aside>
 
       <style jsx>{`
+        /* Mobile Header */
+        .mobile-header {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: var(--header-height-mobile, 56px);
+          background: var(--bg-primary);
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          align-items: center;
+          padding: 0 16px;
+          z-index: 1001;
+          gap: 12px;
+        }
+
+        .hamburger {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          width: 44px;
+          height: 44px;
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          padding: 0;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+        }
+
+        .hamburger-line {
+          display: block;
+          width: 22px;
+          height: 2px;
+          background: var(--text-primary);
+          border-radius: 2px;
+          transition: all 0.3s ease;
+          margin: 2.5px 0;
+        }
+
+        .hamburger-line.open:nth-child(1) {
+          transform: rotate(45deg) translate(3.5px, 3.5px);
+        }
+
+        .hamburger-line.open:nth-child(2) {
+          opacity: 0;
+        }
+
+        .hamburger-line.open:nth-child(3) {
+          transform: rotate(-45deg) translate(3.5px, -3.5px);
+        }
+
+        .mobile-logo {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .mobile-logo-text {
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .mobile-header-spacer {
+          flex: 1;
+        }
+
+        /* Sidebar Overlay */
+        .sidebar-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 1002;
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        /* Desktop Sidebar */
         .sidebar {
           width: 260px;
           height: 100vh;
@@ -163,11 +355,31 @@ export function Sidebar() {
           position: fixed;
           left: 0;
           top: 0;
+          z-index: 100;
+        }
+
+        /* Mobile Sidebar */
+        .sidebar.mobile {
+          width: 280px;
+          max-width: 85vw;
+          z-index: 1003;
+          transform: translateX(-100%);
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: none;
+          padding-top: 0;
+        }
+
+        .sidebar.mobile.open {
+          transform: translateX(0);
+          box-shadow: var(--shadow-lg);
         }
 
         .sidebar-header {
           padding: 20px;
           border-bottom: 1px solid var(--border-color);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
         }
 
         .logo {
@@ -199,6 +411,25 @@ export function Sidebar() {
           letter-spacing: 1px;
         }
 
+        .close-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 44px;
+          height: 44px;
+          background: var(--bg-hover);
+          border: none;
+          border-radius: 12px;
+          cursor: pointer;
+          color: var(--text-secondary);
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+        }
+
+        .close-btn:active {
+          background: var(--bg-tertiary);
+        }
+
         .sidebar-layer {
           padding: 16px 20px;
           border-bottom: 1px solid var(--border-color);
@@ -211,6 +442,7 @@ export function Sidebar() {
           flex-direction: column;
           gap: 4px;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
         }
 
         .sidebar-footer {
@@ -227,14 +459,24 @@ export function Sidebar() {
         }
 
         .logout {
+          display: flex;
+          align-items: center;
+          gap: 8px;
           border: none;
           background: transparent;
           color: var(--text-secondary);
-          font-size: 12px;
+          font-size: 14px;
           cursor: pointer;
+          padding: 10px 14px;
+          margin: -10px -14px;
+          border-radius: 10px;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
         }
 
-        .logout:hover {
+        .logout:hover,
+        .logout:active {
+          background: var(--bg-hover);
           color: var(--text-primary);
         }
       `}</style>
@@ -244,16 +486,22 @@ export function Sidebar() {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 12px 16px;
+          padding: 14px 16px;
           border-radius: 10px;
           color: var(--text-secondary);
           text-decoration: none;
           transition: all 0.15s ease;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
         }
 
         .nav-item:hover {
           background: var(--bg-hover);
           color: var(--text-primary);
+        }
+
+        .nav-item:active {
+          background: var(--bg-tertiary);
         }
 
         .nav-item.active {
@@ -267,13 +515,26 @@ export function Sidebar() {
           justify-content: center;
           width: 20px;
           height: 20px;
+          flex-shrink: 0;
         }
 
         .nav-label {
           font-size: 14px;
           font-weight: 500;
         }
+
+        /* Mobile touch improvements */
+        @media (max-width: 767px) {
+          .nav-item {
+            padding: 16px;
+            min-height: 52px;
+          }
+
+          .nav-label {
+            font-size: 15px;
+          }
+        }
       `}</style>
-    </aside>
+    </>
   );
 }

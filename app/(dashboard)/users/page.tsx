@@ -305,6 +305,53 @@ export default function UsersPage() {
           )}
         </div>
       </div>
+
+      <style jsx>{`
+        @media (max-width: 767px) {
+          :global(.grid-2) {
+            grid-template-columns: 1fr !important;
+          }
+
+          :global(.table thead) {
+            display: none;
+          }
+
+          :global(.table tbody tr) {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            margin-bottom: 8px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            gap: 8px;
+          }
+
+          :global(.table td) {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            border-bottom: none;
+          }
+
+          :global(.table td:last-child) {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+            padding-top: 12px;
+            margin-top: 8px;
+            border-top: 1px solid var(--border-color);
+          }
+
+          :global(.table td:last-child > div) {
+            flex-direction: column;
+          }
+
+          :global(.table td:last-child .btn) {
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -326,6 +326,75 @@ export default function DealsPage() {
           font-size: 14px;
           padding: 4px 0;
         }
+
+        @media (max-width: 767px) {
+          .page-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 16px;
+          }
+
+          .page-header > a {
+            width: 100%;
+          }
+
+          .loading-state {
+            padding: 32px 16px;
+          }
+
+          .actions {
+            flex-wrap: wrap;
+            gap: 6px;
+          }
+
+          .actions .btn {
+            flex: 1;
+            min-width: 80px;
+          }
+
+          /* Преобразуем таблицу в карточки */
+          :global(.table) {
+            min-width: unset !important;
+          }
+
+          :global(.table thead) {
+            display: none;
+          }
+
+          :global(.table tbody tr) {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            margin-bottom: 8px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            gap: 12px;
+          }
+
+          :global(.table td) {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            border-bottom: none;
+          }
+
+          :global(.table td:last-child) {
+            flex-direction: column;
+            align-items: stretch;
+            padding-top: 12px;
+            margin-top: 8px;
+            border-top: 1px solid var(--border-color);
+          }
+
+          .detail-group {
+            margin-bottom: 12px;
+          }
+
+          .detail-card {
+            padding: 10px;
+          }
+        }
       `}</style>
     </div>
   );

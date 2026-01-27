@@ -320,6 +320,24 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          :global(.grid-2) {
+            grid-template-columns: 1fr !important;
+          }
+
+          :global(.modal) {
+            max-width: 100% !important;
+            max-height: 90vh;
+            border-radius: 20px 20px 0 0;
+          }
+
+          :global(.code-block) {
+            font-size: 11px;
+            padding: 12px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -268,6 +268,7 @@ export default function DashboardPage() {
           padding: 12px 16px;
           border-radius: 12px;
           margin-bottom: 24px;
+          gap: 12px;
         }
 
         .connection-banner.connected {
@@ -291,6 +292,14 @@ export default function DashboardPage() {
           gap: 10px;
           font-size: 14px;
           font-weight: 500;
+          flex: 1;
+          min-width: 0;
+        }
+
+        .connection-indicator span:last-child {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .stats-grid {
@@ -317,11 +326,19 @@ export default function DashboardPage() {
           border-radius: 12px;
           text-decoration: none;
           transition: all 0.2s ease;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+          min-height: var(--touch-target-comfortable, 48px);
         }
 
         .action-card:hover {
           background: var(--bg-tertiary);
           transform: translateY(-2px);
+        }
+
+        .action-card:active {
+          background: var(--bg-tertiary);
+          transform: translateY(0);
         }
 
         .action-icon {
@@ -333,6 +350,7 @@ export default function DashboardPage() {
           background: var(--accent-bg);
           color: var(--accent-color);
           border-radius: 12px;
+          flex-shrink: 0;
         }
 
         .action-label {
@@ -353,6 +371,7 @@ export default function DashboardPage() {
           justify-content: space-between;
           padding: 14px 0;
           border-bottom: 1px solid var(--border-color);
+          gap: 12px;
         }
 
         .activity-item:last-child {
@@ -363,6 +382,8 @@ export default function DashboardPage() {
           display: flex;
           flex-direction: column;
           gap: 4px;
+          flex: 1;
+          min-width: 0;
         }
 
         .activity-type {
@@ -376,17 +397,22 @@ export default function DashboardPage() {
         .activity-desc {
           font-size: 14px;
           color: var(--text-primary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
         .activity-meta {
           display: flex;
           align-items: center;
           gap: 12px;
+          flex-shrink: 0;
         }
 
         .activity-time {
           font-size: 12px;
           color: var(--text-tertiary);
+          white-space: nowrap;
         }
 
         @media (max-width: 1024px) {
@@ -395,9 +421,79 @@ export default function DashboardPage() {
           }
         }
 
-        @media (max-width: 640px) {
+        @media (max-width: 767px) {
+          .connection-banner {
+            flex-wrap: wrap;
+            padding: 14px 16px;
+          }
+
+          .connection-indicator {
+            font-size: 13px;
+          }
+
+          .stats-grid {
+            margin-bottom: 16px;
+          }
+
+          .quick-actions {
+            margin-bottom: 16px;
+          }
+
+          .actions-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+          }
+
+          .action-card {
+            padding: 16px;
+            gap: 10px;
+          }
+
+          .action-icon {
+            width: 44px;
+            height: 44px;
+          }
+
+          .action-icon svg {
+            width: 22px;
+            height: 22px;
+          }
+
+          .action-label {
+            font-size: 13px;
+          }
+
+          .activity-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 16px 0;
+          }
+
+          .activity-meta {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          .activity-desc {
+            white-space: normal;
+            line-height: 1.4;
+          }
+        }
+
+        @media (max-width: 374px) {
           .actions-grid {
             grid-template-columns: 1fr;
+          }
+
+          .action-card {
+            flex-direction: row;
+            justify-content: flex-start;
+            padding: 14px 16px;
+          }
+
+          .action-label {
+            text-align: left;
           }
         }
       `}</style>

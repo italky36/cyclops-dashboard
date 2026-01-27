@@ -507,14 +507,61 @@ export default function NewBeneficiaryPage() {
           border-top: 1px solid var(--border-color);
         }
 
-        @media (max-width: 640px) {
+        @media (max-width: 767px) {
+          .breadcrumb {
+            font-size: 13px;
+          }
+
+          .form-card {
+            padding: 20px;
+          }
+
           .type-selector {
             grid-template-columns: 1fr;
+            gap: 10px;
+          }
+
+          .type-option {
+            flex-direction: row;
+            align-items: center;
+            padding: 16px;
+            gap: 12px;
+          }
+
+          .type-icon {
+            font-size: 24px;
+          }
+
+          .type-label {
+            text-align: left;
+          }
+
+          .type-desc {
+            text-align: left;
           }
 
           .form-row,
           .form-row-3 {
             grid-template-columns: 1fr;
+            gap: 0;
+          }
+
+          .form-actions {
+            flex-direction: column-reverse;
+            gap: 10px;
+            margin-top: 24px;
+          }
+
+          .form-actions .btn {
+            width: 100%;
+          }
+
+          .divider {
+            margin: 20px 0;
+          }
+
+          .error-message {
+            font-size: 13px;
           }
         }
       `}</style>

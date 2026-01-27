@@ -441,6 +441,94 @@ export default function PaymentsPage() {
         .info-row:not(:last-child) {
           border-bottom: 1px solid var(--border-color);
         }
+
+        @media (max-width: 767px) {
+          .page-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
+          .pending-badge {
+            align-self: flex-start;
+          }
+
+          .tab-badge {
+            margin-left: 6px;
+            padding: 2px 6px;
+          }
+
+          .loading-state {
+            padding: 32px 16px;
+          }
+
+          .type-badge {
+            font-size: 12px;
+            padding: 3px 8px;
+          }
+
+          .purpose-text {
+            font-size: 12px;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          /* Преобразуем таблицу в карточки */
+          :global(.table) {
+            min-width: unset !important;
+          }
+
+          :global(.table thead) {
+            display: none;
+          }
+
+          :global(.table tbody tr) {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            margin-bottom: 8px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            gap: 8px;
+          }
+
+          :global(.table td) {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            border-bottom: none;
+          }
+
+          :global(.table td:last-child) {
+            padding-top: 12px;
+            margin-top: 8px;
+            border-top: 1px solid var(--border-color);
+          }
+
+          :global(.table td:last-child .btn) {
+            width: 100%;
+          }
+
+          .payment-info {
+            padding: 14px;
+          }
+
+          .info-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+            padding: 10px 0;
+          }
+
+          .info-row .purpose-text {
+            max-width: none;
+            white-space: normal;
+            word-break: break-word;
+          }
+        }
       `}</style>
     </div>
   );
