@@ -149,9 +149,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (process.env.NODE_ENV === 'development') {
+      console.info('[Cyclops API] request', {
+        layer,
+        method,
+        params,
+      });
+    }
+
     // Получаем клиент и выполняем запрос
     const client = await getClient(layer);
     const result = await client.call(method, params || {});
+
+    if (process.env.NODE_ENV === 'development' && result?.error) {
+      console.info('[Cyclops API] response error', {
+        layer,
+        method,
+        error: result.error,
+      });
+    }
 
     return NextResponse.json(result);
   } catch (error) {

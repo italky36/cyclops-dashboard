@@ -193,11 +193,18 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
         inn?: string;
       };
     }) =>
-      call('list_virtual_account', {
-        page: 1,
-        per_page: 100,
-        filters: filters || {},
-      }),
+      call('list_virtual_account', (() => {
+        const beneficiary = filters?.beneficiary;
+        const hasBeneficiaryFilters = beneficiary && Object.keys(beneficiary).length > 0;
+        const params: Record<string, unknown> = {
+          page: 1,
+          per_page: 100,
+        };
+        if (hasBeneficiaryFilters) {
+          params.filters = filters;
+        }
+        return params;
+      })()),
     [call]
   );
 

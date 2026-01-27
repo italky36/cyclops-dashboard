@@ -52,7 +52,7 @@ export default function VirtualAccountsPage() {
     setError(null);
     try {
       const [accountsRes, beneficiariesRes] = await Promise.all([
-        cyclops.listVirtualAccounts(),
+        cyclops.listVirtualAccounts({ beneficiary: { is_active: true } }),
         cyclops.listBeneficiaries({ is_active: true }),
       ]);
 

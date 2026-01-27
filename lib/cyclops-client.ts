@@ -238,11 +238,16 @@ export class CyclopsClient {
       inn?: string;
     };
   }) {
-    return this.call('list_virtual_account', {
+    const beneficiary = filters?.beneficiary;
+    const hasBeneficiaryFilters = beneficiary && Object.keys(beneficiary).length > 0;
+    const params: Record<string, unknown> = {
       page: 1,
       per_page: 100,
-      filters: filters || {},
-    });
+    };
+    if (hasBeneficiaryFilters) {
+      params.filters = filters;
+    }
+    return this.call('list_virtual_account', params);
   }
 
   async listVirtualTransactions(virtual_account: string) {
