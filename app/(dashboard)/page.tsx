@@ -74,7 +74,10 @@ export default function DashboardPage() {
             accountIds.map(async (accountId: string) => {
               try {
                 const detailsRes = await cyclops.getVirtualAccount(accountId);
-                return detailsRes.result?.virtual_account || null;
+                const detailsResult = detailsRes.result as Record<string, unknown> | undefined;
+                return detailsResult && 'virtual_account' in detailsResult
+                  ? (detailsResult as { virtual_account?: unknown }).virtual_account || null
+                  : null;
               } catch {
                 return null;
               }
