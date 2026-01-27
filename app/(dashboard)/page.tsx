@@ -51,7 +51,10 @@ export default function DashboardPage() {
         ]);
 
         // Подсчёт статистики из ответов
-        const beneficiariesList = beneficiariesRes.result?.beneficiaries;
+        const beneficiariesResult = beneficiariesRes.result as Record<string, unknown> | undefined;
+        const beneficiariesList = beneficiariesResult && 'beneficiaries' in beneficiariesResult
+          ? (beneficiariesResult as { beneficiaries?: unknown }).beneficiaries
+          : undefined;
         const beneficiaries = Array.isArray(beneficiariesList)
           ? beneficiariesList.length : 0;
         const accountsResult = accountsRes.result as Record<string, unknown> | undefined;

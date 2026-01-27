@@ -112,7 +112,10 @@ export default function PayoutsPage() {
     inFlight.current.add('beneficiaries');
     try {
       const response = await listBeneficiaries({ is_active: true });
-      const list = response.result?.beneficiaries;
+      const result = response.result as Record<string, unknown> | undefined;
+      const list = result && 'beneficiaries' in result
+        ? (result as { beneficiaries?: unknown }).beneficiaries
+        : undefined;
       if (Array.isArray(list)) {
         const mapped = list.map((b: any) => ({
           beneficiary_id: b.beneficiary_id || b.id || '',

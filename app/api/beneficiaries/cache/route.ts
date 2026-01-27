@@ -96,7 +96,10 @@ export async function POST(request: NextRequest) {
         filters: body?.filters || {},
       });
 
-      const list = response?.result?.beneficiaries;
+      const responseResult = response?.result as Record<string, unknown> | undefined;
+      const list = responseResult && 'beneficiaries' in responseResult
+        ? (responseResult as { beneficiaries?: unknown }).beneficiaries
+        : undefined;
       if (Array.isArray(list)) {
         upsertBeneficiariesFromList(list);
       }

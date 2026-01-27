@@ -84,7 +84,10 @@ export default function VirtualAccountsPage() {
       } else {
         setAccounts([]);
       }
-      const beneficiariesList = beneficiariesRes.result?.beneficiaries;
+      const beneficiariesResult = beneficiariesRes.result as Record<string, unknown> | undefined;
+      const beneficiariesList = beneficiariesResult && 'beneficiaries' in beneficiariesResult
+        ? (beneficiariesResult as { beneficiaries?: unknown }).beneficiaries
+        : undefined;
       if (Array.isArray(beneficiariesList)) {
         const mapped = beneficiariesList.map((b: Beneficiary) => {
           const beneficiaryId = b.beneficiary_id || b.id || '';
