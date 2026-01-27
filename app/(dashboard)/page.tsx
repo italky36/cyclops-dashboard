@@ -54,8 +54,10 @@ export default function DashboardPage() {
         const beneficiariesList = beneficiariesRes.result?.beneficiaries;
         const beneficiaries = Array.isArray(beneficiariesList)
           ? beneficiariesList.length : 0;
-        const accountIds = Array.isArray(accountsRes.result?.virtual_accounts)
-          ? accountsRes.result.virtual_accounts : [];
+        const accountsResult = accountsRes.result as Record<string, unknown> | undefined;
+        const accountIds = accountsResult && 'virtual_accounts' in accountsResult && Array.isArray((accountsResult as any).virtual_accounts)
+          ? (accountsResult as any).virtual_accounts
+          : [];
         const virtualAccounts = accountIds.length;
         const deals = Array.isArray(dealsRes.result)
           ? dealsRes.result.length : 0;
