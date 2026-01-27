@@ -1,0 +1,210 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { CyclopsClient } from '@/lib/cyclops-client';
+import type { Layer } from '@/types/cyclops';
+import fs from 'fs/promises';
+import path from 'path';
+import crypto from 'crypto';
+
+// Параметры шифрования
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16;
+const TAG_LENGTH = 16;
+const SALT_LENGTH = 64;
+const KEY_LENGTH = 32;
+const ITERATIONS = 100000;
+const KEYS_DIR = process.env.KEYS_STORAGE_PATH || './.keys';
+
+const getMasterPassword = () => {
+  const password = process.env.KEYS_MASTER_PASSWORD;
+  if (!password && process.env.NODE_ENV === 'development') {
+    return 'dev-password-change-in-production';
+  }
+  return password || '';
+};
+
+function decrypt(encryptedText: string, password: string): string {
+  const buffer = Buffer.from(encryptedText, 'base64');
+  const salt = buffer.subarray(0, SALT_LENGTH);
+  const iv = buffer.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+  const tag = buffer.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+  const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+  const key = crypto.pbkdf2Sync(password, salt, ITERATIONS, KEY_LENGTH, 'sha512');
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(encrypted) + decipher.final('utf8');
+}
+
+async function loadKeysConfig(layer: string): Promise<{
+  privateKey: string;
+  signSystem: string;
+  signThumbprint: string;
+} | null> {
+  const password = getMasterPassword();
+  try {
+    const filePath = path.join(KEYS_DIR, `${layer}.keys.enc`);
+    const encrypted = await fs.readFile(filePath, 'utf8');
+    const decrypted = decrypt(encrypted, password);
+    return JSON.parse(decrypted);
+  } catch {
+    return null;
+  }
+}
+
+async function getClient(layer: Layer): Promise<CyclopsClient> {
+  // Загружаем конфигурацию из файла
+  const config = await loadKeysConfig(layer);
+  
+  if (!config) {
+    throw new Error(`Конфигурация для слоя ${layer.toUpperCase()} не найдена. Настройте ключи в разделе Настройки.`);
+  }
+
+  // Создаём новый клиент (или используем кэшированный если конфиг не изменился)
+  return new CyclopsClient({
+    layer,
+    privateKey: config.privateKey,
+    signSystem: config.signSystem,
+    signThumbprint: config.signThumbprint,
+  });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { layer, method, params } = body as {
+      layer: Layer;
+      method: string;
+      params?: Record<string, unknown>;
+    };
+
+    // Валидация
+    if (!layer || !['pre', 'prod'].includes(layer)) {
+      return NextResponse.json(
+        { error: 'Invalid layer. Must be "pre" or "prod"' },
+        { status: 400 }
+      );
+    }
+
+    if (!method) {
+      return NextResponse.json(
+        { error: 'Method is required' },
+        { status: 400 }
+      );
+    }
+
+    // Безопасность: проверяем разрешённые методы
+    const allowedMethods = [
+      // Бенефициары
+      'create_beneficiary_ul',
+      'create_beneficiary_ip',
+      'create_beneficiary_fl',
+      'update_beneficiary_ul',
+      'update_beneficiary_ip',
+      'update_beneficiary_fl',
+      'get_beneficiary',
+      'list_beneficiary',
+      'activate_beneficiary',
+      'deactivate_beneficiary',
+      'get_beneficiary_restrictions',
+      // Виртуальные счета
+      'create_virtual_account',
+      'get_virtual_account',
+      'list_virtual_account',
+      'list_virtual_transaction',
+      'refund_virtual_account',
+      'transfer_between_virtual_accounts',
+      // Сделки
+      'create_deal',
+      'update_deal',
+      'get_deal',
+      'list_deals',
+      'execute_deal',
+      'rejected_deal',
+      'cancel_deal_with_executed_recipients',
+      'compliance_check_deal',
+      // Платежи
+      'list_payments',
+      'list_payments_v2',
+      'get_payment',
+      'identification_payment',
+      'refund_payment',
+      'identification_returned_payment_by_deal',
+      'compliance_check_payment',
+      'payment_of_taxes',
+      'generate_payment_order',
+      // СБП
+      'list_bank_sbp',
+      'generate_sbp_qrcode',
+      // Документы
+      'upload_document',
+      'get_document',
+      'list_documents',
+      // Утилиты
+      'echo',
+    ];
+
+    if (!allowedMethods.includes(method)) {
+      return NextResponse.json(
+        { error: `Method "${method}" is not allowed` },
+        { status: 403 }
+      );
+    }
+
+    // Получаем клиент и выполняем запрос
+    const client = await getClient(layer);
+    const result = await client.call(method, params || {});
+
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error('Cyclops API error:', error);
+    
+    return NextResponse.json(
+      { 
+        error: error instanceof Error ? error.message : 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// Получение списка доступных методов
+export async function GET() {
+  return NextResponse.json({
+    methods: {
+      beneficiaries: [
+        'create_beneficiary_ul',
+        'create_beneficiary_ip', 
+        'create_beneficiary_fl',
+        'get_beneficiary',
+        'list_beneficiary',
+        'activate_beneficiary',
+        'deactivate_beneficiary',
+      ],
+      virtual_accounts: [
+        'create_virtual_account',
+        'get_virtual_account',
+        'list_virtual_account',
+        'refund_virtual_account',
+      ],
+      deals: [
+        'create_deal',
+        'update_deal',
+        'get_deal',
+        'list_deals',
+        'execute_deal',
+        'rejected_deal',
+      ],
+      payments: [
+        'list_payments_v2',
+        'get_payment',
+        'identification_payment',
+        'refund_payment',
+      ],
+      sbp: [
+        'list_bank_sbp',
+        'generate_sbp_qrcode',
+      ],
+    },
+    layers: ['pre', 'prod'],
+  });
+}

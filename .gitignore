@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+.next/
+out/
+build/
+dist/
+
+# Testing
+coverage/
+
+# Environment files - ВАЖНО! Никогда не коммитьте!
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Private keys - КРИТИЧЕСКИ ВАЖНО!
+*.pem
+*.key
+private_key*
+*_private*
+
+# Encrypted keys storage - НЕ КОММИТИТЬ!
+.keys/
+*.keys.enc
+
+# SQLite data
+data/
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Misc
+*.log

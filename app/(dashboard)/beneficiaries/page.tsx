@@ -1,0 +1,328 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useAppStore } from '@/lib/store';
+import { useCyclops } from '@/hooks/useCyclops';
+
+interface Beneficiary {
+  beneficiary_id: string;
+  type: 'ul' | 'ip' | 'fl';
+  inn: string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  is_active: boolean;
+  is_added_to_ms: boolean;
+  created_at: string;
+}
+
+export default function BeneficiariesPage() {
+  const layer = useAppStore((s) => s.layer);
+  const addRecentAction = useAppStore((s) => s.addRecentAction);
+  const cyclops = useCyclops({ layer });
+  
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [search, setSearch] = useState('');
+
+  const loadBeneficiaries = async () => {
+    setIsLoading(true);
+    try {
+      const filters = filter === 'all' ? {} : { is_active: filter === 'active' };
+      const response = await cyclops.listBeneficiaries(filters);
+      
+      if (Array.isArray(response.result)) {
+        setBeneficiaries(response.result);
+      }
+    } catch (error) {
+      console.error('Failed to load beneficiaries:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBeneficiaries();
+  }, [layer, filter]);
+
+  const handleToggleActive = async (beneficiary: Beneficiary) => {
+    try {
+      if (beneficiary.is_active) {
+        await cyclops.deactivateBeneficiary(beneficiary.beneficiary_id);
+        addRecentAction({
+          type: 'Деактивация',
+          description: `Бенефициар ${getBeneficiaryName(beneficiary)} деактивирован`,
+          layer,
+        });
+      } else {
+        await cyclops.activateBeneficiary(beneficiary.beneficiary_id);
+        addRecentAction({
+          type: 'Активация',
+          description: `Бенефициар ${getBeneficiaryName(beneficiary)} активирован`,
+          layer,
+        });
+      }
+      await loadBeneficiaries();
+    } catch (error) {
+      console.error('Failed to toggle beneficiary:', error);
+    }
+  };
+
+  const getBeneficiaryName = (b: Beneficiary) => {
+    if (b.name) return b.name;
+    if (b.first_name && b.last_name) return `${b.last_name} ${b.first_name}`;
+    return b.inn;
+  };
+
+  const getBeneficiaryTypeLabel = (type: string) => {
+    switch (type) {
+      case 'ul': return 'ЮЛ';
+      case 'ip': return 'ИП';
+      case 'fl': return 'ФЛ';
+      default: return type;
+    }
+  };
+
+  const filteredBeneficiaries = beneficiaries.filter((b) => {
+    if (!search) return true;
+    const searchLower = search.toLowerCase();
+    return (
+      b.inn.includes(search) ||
+      getBeneficiaryName(b).toLowerCase().includes(searchLower)
+    );
+  });
+
+  return (
+    <div className="beneficiaries-page">
+      <header className="page-header">
+        <div>
+          <h1 className="page-title">Бенефициары</h1>
+          <p className="page-description">
+            Управление бенефициарами номинального счёта
+          </p>
+        </div>
+        <Link href="/beneficiaries/new" className="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Добавить
+        </Link>
+      </header>
+
+      {/* Filters */}
+      <div className="filters-bar">
+        <div className="search-wrapper">
+          <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            className="form-input search-input"
+            placeholder="Поиск по ИНН или названию..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        
+        <div className="tabs">
+          <button
+            className={`tab ${filter === 'all' ? 'active' : ''}`}
+            onClick={() => setFilter('all')}
+          >
+            Все
+          </button>
+          <button
+            className={`tab ${filter === 'active' ? 'active' : ''}`}
+            onClick={() => setFilter('active')}
+          >
+            Активные
+          </button>
+          <button
+            className={`tab ${filter === 'inactive' ? 'active' : ''}`}
+            onClick={() => setFilter('inactive')}
+          >
+            Неактивные
+          </button>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="card">
+        {isLoading ? (
+          <div className="loading-state">
+            <div className="spinner" />
+            <span>Загрузка...</span>
+          </div>
+        ) : filteredBeneficiaries.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <p className="empty-state-title">Нет бенефициаров</p>
+            <p className="empty-state-description">
+              Добавьте первого бенефициара для начала работы
+            </p>
+            <Link href="/beneficiaries/new" className="btn btn-primary" style={{ marginTop: 16 }}>
+              Добавить бенефициара
+            </Link>
+          </div>
+        ) : (
+          <div className="table-wrapper">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Тип</th>
+                  <th>Название / ФИО</th>
+                  <th>ИНН</th>
+                  <th>Статус</th>
+                  <th>Мастер-система</th>
+                  <th>Создан</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBeneficiaries.map((b) => (
+                  <tr key={b.beneficiary_id}>
+                    <td>
+                      <span className="badge badge-neutral">
+                        {getBeneficiaryTypeLabel(b.type)}
+                      </span>
+                    </td>
+                    <td>
+                      <Link 
+                        href={`/beneficiaries/${b.beneficiary_id}`}
+                        className="beneficiary-name"
+                      >
+                        {getBeneficiaryName(b)}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className="code">{b.inn}</span>
+                    </td>
+                    <td>
+                      <span className={`status ${b.is_active ? 'active' : 'inactive'}`}>
+                        <span className={`status-dot ${b.is_active ? 'success' : 'neutral'}`} />
+                        {b.is_active ? 'Активен' : 'Неактивен'}
+                      </span>
+                    </td>
+                    <td>
+                      {b.is_added_to_ms ? (
+                        <span className="badge badge-success">Добавлен</span>
+                      ) : (
+                        <span className="badge badge-warning">Ожидание</span>
+                      )}
+                    </td>
+                    <td>
+                      {new Date(b.created_at).toLocaleDateString('ru-RU')}
+                    </td>
+                    <td>
+                      <div className="actions">
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => handleToggleActive(b)}
+                          title={b.is_active ? 'Деактивировать' : 'Активировать'}
+                        >
+                          {b.is_active ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10" />
+                              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                            </svg>
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="9 11 12 14 22 4" />
+                              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                            </svg>
+                          )}
+                        </button>
+                        <Link 
+                          href={`/beneficiaries/${b.beneficiary_id}`}
+                          className="btn btn-ghost btn-sm"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <style jsx>{`
+        .beneficiaries-page {
+          max-width: 1400px;
+        }
+
+        .page-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+        }
+
+        .filters-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+          margin-bottom: 24px;
+        }
+
+        .search-wrapper {
+          position: relative;
+          flex: 1;
+          max-width: 400px;
+        }
+
+        .search-icon {
+          position: absolute;
+          left: 14px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--text-tertiary);
+        }
+
+        .search-input {
+          padding-left: 42px;
+        }
+
+        .loading-state {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          padding: 48px;
+          color: var(--text-secondary);
+        }
+
+        .beneficiary-name {
+          color: var(--text-primary);
+          text-decoration: none;
+          font-weight: 500;
+        }
+
+        .beneficiary-name:hover {
+          color: var(--accent-color);
+        }
+
+        .actions {
+          display: flex;
+          gap: 4px;
+        }
+      `}</style>
+    </div>
+  );
+}
