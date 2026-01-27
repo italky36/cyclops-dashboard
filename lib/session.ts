@@ -35,7 +35,7 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
     if (!payload.sub || typeof payload.username !== 'string') {
       return null;
     }
-    return payload as SessionPayload;
+    return payload as unknown as SessionPayload;
   } catch {
     return null;
   }

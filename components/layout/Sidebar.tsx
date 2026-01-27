@@ -65,6 +65,18 @@ const navigation = [
     ),
   },
   {
+    name: 'Выплаты',
+    href: '/payouts',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="2" y="7" width="20" height="14" rx="2" />
+        <path d="M16 7V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v3" />
+        <circle cx="12" cy="14" r="3" />
+        <path d="M6 14h.01M18 14h.01" />
+      </svg>
+    ),
+  },
+  {
     name: 'Пользователи',
     href: '/users',
     icon: (
