@@ -7,16 +7,17 @@ import { useCyclops } from '@/hooks/useCyclops';
 interface VirtualAccount {
   virtual_account_id: string;
   beneficiary_id: string;
+  beneficiary_inn?: string;
   type: 'standard' | 'for_ndfl';
   available_amount: number;
   blocked_amount: number;
-  is_active: boolean;
-  created_at: string;
 }
 
 interface Beneficiary {
   beneficiary_id: string;
+  id?: string;
   type: string;
+  legal_type?: string;
   inn: string;
   name?: string;
   first_name?: string;
@@ -55,12 +56,48 @@ export default function VirtualAccountsPage() {
         cyclops.listBeneficiaries({ is_active: true }),
       ]);
 
-      if (Array.isArray(accountsRes.result)) {
-        setAccounts(accountsRes.result);
+      const accountIds = accountsRes.result?.virtual_accounts;
+      if (Array.isArray(accountIds) && accountIds.length > 0) {
+        const accountDetails = await Promise.all(
+          accountIds.map(async (accountId: string) => {
+            try {
+              const detailsRes = await cyclops.getVirtualAccount(accountId);
+              const details = detailsRes.result?.virtual_account;
+              if (!details) return null;
+              return {
+                virtual_account_id: details.code || accountId,
+                beneficiary_id: details.beneficiary_id,
+                beneficiary_inn: details.beneficiary_inn,
+                type: details.type === 'for_ndfl' ? 'for_ndfl' : 'standard',
+                available_amount: typeof details.cash === 'number' ? details.cash : 0,
+                blocked_amount: typeof details.blocked_cash === 'number' ? details.blocked_cash : 0,
+              } as VirtualAccount;
+            } catch {
+              return null;
+            }
+          })
+        );
+        setAccounts(accountDetails.filter(Boolean) as VirtualAccount[]);
+      } else {
+        setAccounts([]);
       }
       const beneficiariesList = beneficiariesRes.result?.beneficiaries;
       if (Array.isArray(beneficiariesList)) {
-        setBeneficiaries(beneficiariesList);
+        const mapped = beneficiariesList.map((b: Beneficiary) => {
+          const beneficiaryId = b.beneficiary_id || b.id || '';
+          let type = b.type;
+          if (!type && b.legal_type) {
+            if (b.legal_type === 'F') type = 'fl';
+            else if (b.legal_type === 'I') type = 'ip';
+            else if (b.legal_type === 'J') type = 'ul';
+          }
+          return {
+            ...b,
+            beneficiary_id: beneficiaryId,
+            type: type || 'ul',
+          };
+        });
+        setBeneficiaries(mapped);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
@@ -88,6 +125,16 @@ export default function VirtualAccountsPage() {
     if (b.name) return b.name;
     if (b.first_name && b.last_name) return `${b.last_name} ${b.first_name}`;
     return b.inn;
+  };
+
+  const getAccountBeneficiaryLabel = (account: VirtualAccount) => {
+    const b = beneficiaries.find(ben => ben.beneficiary_id === account.beneficiary_id);
+    if (b) {
+      if (b.name) return b.name;
+      if (b.first_name && b.last_name) return `${b.last_name} ${b.first_name}`;
+      return b.inn;
+    }
+    return account.beneficiary_inn || account.beneficiary_id.slice(0, 8) + '...';
   };
 
   const getTotalBalance = () => {
@@ -266,7 +313,7 @@ export default function VirtualAccountsPage() {
                 </div>
                 
                 <div className="account-beneficiary">
-                  {getBeneficiaryName(account.beneficiary_id)}
+                  {getAccountBeneficiaryLabel(account)}
                 </div>
 
                 <div className="account-balances">
@@ -284,13 +331,13 @@ export default function VirtualAccountsPage() {
                   </div>
                 </div>
 
-                <div className="account-footer">
-                  <span className="account-date">
-                    Создан {new Date(account.created_at).toLocaleDateString('ru-RU')}
+              <div className="account-footer">
+                  <span className="account-date code">
+                    {account.virtual_account_id}
                   </span>
-                </div>
               </div>
-            ))}
+            </div>
+          ))}
           </div>
         )}
       </div>
@@ -393,7 +440,7 @@ export default function VirtualAccountsPage() {
                   <option value="">Выберите счёт</option>
                   {accounts.filter(a => a.available_amount > 0).map((a) => (
                     <option key={a.virtual_account_id} value={a.virtual_account_id}>
-                      {getBeneficiaryName(a.beneficiary_id)} — {formatMoney(a.available_amount)}
+                      {getAccountBeneficiaryLabel(a)} — {formatMoney(a.available_amount)}
                     </option>
                   ))}
                 </select>
@@ -410,7 +457,7 @@ export default function VirtualAccountsPage() {
                   <option value="">Выберите счёт</option>
                   {accounts.filter(a => a.virtual_account_id !== fromAccount).map((a) => (
                     <option key={a.virtual_account_id} value={a.virtual_account_id}>
-                      {getBeneficiaryName(a.beneficiary_id)}
+                      {getAccountBeneficiaryLabel(a)}
                     </option>
                   ))}
                 </select>

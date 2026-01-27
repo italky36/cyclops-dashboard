@@ -34,7 +34,13 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     setState({ loading: true, error: null });
 
     try {
-      const cacheableMethods = new Set(['list_beneficiary', 'get_beneficiary']);
+      const cacheableMethods = new Set([
+        'list_beneficiary',
+        'get_beneficiary',
+        'list_virtual_account',
+        'get_virtual_account',
+        'list_virtual_transaction',
+      ]);
       const cacheKey = cacheableMethods.has(method)
         ? `${method}:${layer}:${JSON.stringify(params || {})}`
         : null;
@@ -84,7 +90,7 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
       setState({ loading: false, error: message });
       if (error instanceof Error) {
         // Drop cached failures so next attempt can retry
-        if (method === 'list_beneficiary' || method === 'get_beneficiary') {
+        if (method === 'list_beneficiary' || method === 'get_beneficiary' || method === 'list_virtual_account' || method === 'get_virtual_account' || method === 'list_virtual_transaction') {
           const cacheKey = `${method}:${layer}:${JSON.stringify(params || {})}`;
           requestCache.delete(cacheKey);
         }
@@ -101,23 +107,39 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   );
 
   const createBeneficiaryIP = useCallback(
-    (params: { inn: string; first_name: string; middle_name?: string; last_name: string }) =>
-      call('create_beneficiary_ip', params),
+    (params: {
+      inn: string;
+      nominal_account_code?: string;
+      nominal_account_bic?: string;
+      beneficiary_data: {
+        first_name: string;
+        middle_name?: string;
+        last_name: string;
+        tax_resident?: boolean;
+      };
+    }) => call('create_beneficiary_ip', params),
     [call]
   );
 
   const createBeneficiaryFL = useCallback(
     (params: {
       inn: string;
-      first_name: string;
-      middle_name?: string;
-      last_name: string;
-      birth_date: string;
-      birth_place: string;
-      passport_series: string;
-      passport_number: string;
-      passport_date: string;
-      registration_address: string;
+      nominal_account_code?: string;
+      nominal_account_bic?: string;
+      beneficiary_data: {
+        first_name: string;
+        middle_name?: string;
+        last_name: string;
+        birth_date: string;
+        birth_place: string;
+        passport_series: string;
+        passport_number: string;
+        passport_date: string;
+        registration_address: string;
+        resident?: boolean;
+        reg_country_code?: string;
+        tax_resident?: boolean;
+      };
     }) => call('create_beneficiary_fl', params),
     [call]
   );
@@ -150,7 +172,10 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   // Виртуальные счета
   const createVirtualAccount = useCallback(
     (params: { beneficiary_id: string; type: 'standard' | 'for_ndfl' }) =>
-      call('create_virtual_account', params),
+      call('create_virtual_account', {
+        beneficiary_id: params.beneficiary_id,
+        virtual_account_type: params.type,
+      }),
     [call]
   );
 
@@ -160,7 +185,19 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   );
 
   const listVirtualAccounts = useCallback(
-    (filters?: { is_active?: boolean }) => call('list_virtual_account', filters),
+    (filters?: {
+      beneficiary?: {
+        id?: string;
+        is_active?: boolean;
+        legal_type?: 'F' | 'I' | 'J';
+        inn?: string;
+      };
+    }) =>
+      call('list_virtual_account', {
+        page: 1,
+        per_page: 100,
+        filters: filters || {},
+      }),
     [call]
   );
 

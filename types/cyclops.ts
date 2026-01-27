@@ -40,24 +40,35 @@ export interface BeneficiaryUL {
 export interface BeneficiaryIP {
   type: 'ip';
   inn: string;
-  first_name: string;
-  middle_name?: string;
-  last_name: string;
-  ogrnip?: string;
+  nominal_account_code?: string;
+  nominal_account_bic?: string;
+  beneficiary_data: {
+    first_name: string;
+    middle_name?: string;
+    last_name: string;
+    tax_resident?: boolean;
+  };
 }
 
 export interface BeneficiaryFL {
   type: 'fl';
   inn: string;
-  first_name: string;
-  middle_name?: string;
-  last_name: string;
-  birth_date: string;
-  birth_place: string;
-  passport_series: string;
-  passport_number: string;
-  passport_date: string;
-  registration_address: string;
+  nominal_account_code?: string;
+  nominal_account_bic?: string;
+  beneficiary_data: {
+    first_name: string;
+    middle_name?: string;
+    last_name: string;
+    birth_date: string;
+    birth_place: string;
+    passport_series: string;
+    passport_number: string;
+    passport_date: string;
+    registration_address: string;
+    resident?: boolean;
+    reg_country_code?: string;
+    tax_resident?: boolean;
+  };
 }
 
 export type Beneficiary = BeneficiaryUL | BeneficiaryIP | BeneficiaryFL;
@@ -73,12 +84,12 @@ export interface BeneficiaryResponse {
 export type VirtualAccountType = 'standard' | 'for_ndfl';
 
 export interface VirtualAccount {
-  virtual_account_id: string;
+  code: string;
+  cash: number;
+  blocked_cash: number;
   beneficiary_id: string;
-  type: VirtualAccountType;
-  available_amount: number;
-  blocked_amount: number;
-  is_active: boolean;
+  beneficiary_inn?: string;
+  type?: VirtualAccountType;
 }
 
 export interface CreateVirtualAccountParams {

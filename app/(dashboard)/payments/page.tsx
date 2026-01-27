@@ -18,8 +18,6 @@ interface Payment {
 
 interface VirtualAccount {
   virtual_account_id: string;
-  beneficiary_id: string;
-  available_amount: number;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -62,7 +60,7 @@ export default function PaymentsPage() {
     try {
       const [paymentsRes, accountsRes] = await Promise.all([
         cyclops.listPayments(filter === 'unidentified' ? { identified: false } : undefined),
-        cyclops.listVirtualAccounts({ is_active: true }),
+        cyclops.listVirtualAccounts({ beneficiary: { is_active: true } }),
       ]);
 
       if (Array.isArray(paymentsRes.result)) {
@@ -75,8 +73,9 @@ export default function PaymentsPage() {
         setPayments(filtered);
       }
 
-      if (Array.isArray(accountsRes.result)) {
-        setVirtualAccounts(accountsRes.result);
+      const accountIds = accountsRes.result?.virtual_accounts;
+      if (Array.isArray(accountIds)) {
+        setVirtualAccounts(accountIds.map((id: string) => ({ virtual_account_id: id })));
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';

@@ -54,8 +54,9 @@ export default function DashboardPage() {
         const beneficiariesList = beneficiariesRes.result?.beneficiaries;
         const beneficiaries = Array.isArray(beneficiariesList)
           ? beneficiariesList.length : 0;
-        const virtualAccounts = Array.isArray(accountsRes.result)
-          ? accountsRes.result.length : 0;
+        const accountIds = Array.isArray(accountsRes.result?.virtual_accounts)
+          ? accountsRes.result.virtual_accounts : [];
+        const virtualAccounts = accountIds.length;
         const deals = Array.isArray(dealsRes.result)
           ? dealsRes.result.length : 0;
         const pendingPayments = Array.isArray(paymentsRes.result)
@@ -63,9 +64,22 @@ export default function DashboardPage() {
 
         // Подсчёт общего баланса
         let totalBalance = 0;
-        if (Array.isArray(accountsRes.result)) {
-          totalBalance = accountsRes.result.reduce((sum: number, acc: any) => {
-            return sum + (acc.available_amount || 0);
+        if (accountIds.length > 0) {
+          const accountDetails = await Promise.all(
+            accountIds.map(async (accountId: string) => {
+              try {
+                const detailsRes = await cyclops.getVirtualAccount(accountId);
+                return detailsRes.result?.virtual_account || null;
+              } catch {
+                return null;
+              }
+            })
+          );
+          totalBalance = accountDetails.reduce((sum, acc) => {
+            if (!acc) return sum;
+            const cash = typeof acc.cash === 'number' ? acc.cash : 0;
+            const blocked = typeof acc.blocked_cash === 'number' ? acc.blocked_cash : 0;
+            return sum + cash + blocked;
           }, 0);
         }
 

@@ -220,19 +220,37 @@ export class CyclopsClient {
     beneficiary_id: string;
     type: 'standard' | 'for_ndfl';
   }) {
-    return this.call('create_virtual_account', params);
+    return this.call('create_virtual_account', {
+      beneficiary_id: params.beneficiary_id,
+      virtual_account_type: params.type,
+    });
   }
 
   async getVirtualAccount(virtual_account: string) {
     return this.call('get_virtual_account', { virtual_account });
   }
 
-  async listVirtualAccounts(filters?: { is_active?: boolean }) {
-    return this.call('list_virtual_account', filters || {});
+  async listVirtualAccounts(filters?: {
+    beneficiary?: {
+      id?: string;
+      is_active?: boolean;
+      legal_type?: 'F' | 'I' | 'J';
+      inn?: string;
+    };
+  }) {
+    return this.call('list_virtual_account', {
+      page: 1,
+      per_page: 100,
+      filters: filters || {},
+    });
   }
 
   async listVirtualTransactions(virtual_account: string) {
-    return this.call('list_virtual_transaction', { virtual_account });
+    return this.call('list_virtual_transaction', {
+      page: 1,
+      per_page: 100,
+      filters: { virtual_account },
+    });
   }
 
   async refundVirtualAccount(params: {

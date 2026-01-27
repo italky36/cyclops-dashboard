@@ -57,12 +57,34 @@ export default function NewDealPage() {
     const loadData = async () => {
       try {
         const [accountsRes, banksRes] = await Promise.all([
-          cyclops.listVirtualAccounts({ is_active: true }),
+          cyclops.listVirtualAccounts({ beneficiary: { is_active: true } }),
           cyclops.listBanksSBP(),
         ]);
 
-        if (Array.isArray(accountsRes.result)) {
-          setVirtualAccounts(accountsRes.result.filter((a: VirtualAccount) => a.available_amount > 0));
+        const accountIds = accountsRes.result?.virtual_accounts;
+        if (Array.isArray(accountIds) && accountIds.length > 0) {
+          const accountDetails = await Promise.all(
+            accountIds.map(async (accountId: string) => {
+              try {
+                const detailsRes = await cyclops.getVirtualAccount(accountId);
+                const details = detailsRes.result?.virtual_account;
+                if (!details) return null;
+                return {
+                  virtual_account_id: details.code || accountId,
+                  beneficiary_id: details.beneficiary_id,
+                  available_amount: typeof details.cash === 'number' ? details.cash : 0,
+                  type: details.type || 'standard',
+                } as VirtualAccount;
+              } catch {
+                return null;
+              }
+            })
+          );
+          setVirtualAccounts(
+            (accountDetails.filter(Boolean) as VirtualAccount[]).filter((a) => a.available_amount > 0)
+          );
+        } else {
+          setVirtualAccounts([]);
         }
         if (Array.isArray(banksRes.result)) {
           setSbpBanks(banksRes.result);
