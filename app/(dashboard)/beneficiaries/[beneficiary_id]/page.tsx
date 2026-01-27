@@ -103,7 +103,8 @@ export default function BeneficiaryDetailPage() {
     }
     try {
       const response = await getBeneficiary(beneficiary_id);
-      const data = response.result?.beneficiary ?? response.result;
+      const result = response.result as Record<string, unknown> | undefined;
+      const data = (result && 'beneficiary' in result ? (result as any).beneficiary : result) as Record<string, unknown> | undefined;
       if (data) {
         setBeneficiary(normalizeBeneficiary(data));
       }
