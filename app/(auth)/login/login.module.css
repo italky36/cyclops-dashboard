@@ -56,3 +56,47 @@
   font-size: 12px;
   color: var(--text-tertiary);
 }
+
+/* Mobile styles */
+@media (max-width: 767px) {
+  .page {
+    padding: 16px;
+    padding-top: max(16px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    align-items: flex-start;
+    padding-top: 10vh;
+  }
+
+  .card {
+    max-width: none;
+  }
+
+  .title {
+    font-size: 22px;
+  }
+
+  .subtitle {
+    font-size: 13px;
+  }
+
+  .form {
+    gap: 12px;
+  }
+
+  .actions button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .error {
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+}
+
+/* Very small screens */
+@media (max-width: 374px) {
+  .title {
+    font-size: 20px;
+  }
+}

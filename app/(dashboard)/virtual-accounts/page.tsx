@@ -601,13 +601,66 @@ export default function VirtualAccountsPage() {
           }
         }
 
-        @media (max-width: 640px) {
-          .summary-cards {
-            grid-template-columns: 1fr;
+        @media (max-width: 767px) {
+          .page-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 16px;
           }
 
           .header-actions {
             flex-direction: column;
+            gap: 10px;
+          }
+
+          .header-actions .btn {
+            width: 100%;
+          }
+
+          .summary-cards {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+          }
+
+          .summary-card {
+            padding: 16px;
+          }
+
+          .summary-value {
+            font-size: 20px;
+          }
+
+          .accounts-grid {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
+
+          .account-card {
+            padding: 16px;
+          }
+
+          .account-beneficiary {
+            font-size: 15px;
+          }
+
+          .type-options {
+            flex-direction: column;
+            gap: 10px;
+          }
+
+          .type-option {
+            padding: 14px;
+          }
+
+          .loading-state {
+            padding: 32px 16px;
+          }
+        }
+
+        @media (max-width: 374px) {
+          .summary-cards {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

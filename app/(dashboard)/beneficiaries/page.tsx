@@ -271,6 +271,8 @@ export default function BeneficiariesPage() {
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
+          gap: 16px;
+          flex-wrap: wrap;
         }
 
         .filters-bar {
@@ -293,6 +295,7 @@ export default function BeneficiariesPage() {
           top: 50%;
           transform: translateY(-50%);
           color: var(--text-tertiary);
+          pointer-events: none;
         }
 
         .search-input {
@@ -321,6 +324,75 @@ export default function BeneficiariesPage() {
         .actions {
           display: flex;
           gap: 4px;
+        }
+
+        @media (max-width: 767px) {
+          .page-header {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .page-header > a {
+            width: 100%;
+          }
+
+          .filters-bar {
+            flex-direction: column;
+            gap: 12px;
+            align-items: stretch;
+          }
+
+          .search-wrapper {
+            max-width: none;
+          }
+
+          /* Преобразуем таблицу в карточки на мобильных */
+          .table-wrapper {
+            margin: 0 -16px;
+            padding: 0 16px;
+          }
+
+          :global(.table) {
+            min-width: unset !important;
+          }
+
+          :global(.table thead) {
+            display: none;
+          }
+
+          :global(.table tbody tr) {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            margin-bottom: 8px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            gap: 8px;
+          }
+
+          :global(.table td) {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            border-bottom: none;
+            font-size: 14px;
+          }
+
+          :global(.table td::before) {
+            content: attr(data-label);
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+          }
+
+          .actions {
+            justify-content: flex-end;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 8px;
+          }
         }
       `}</style>
     </div>

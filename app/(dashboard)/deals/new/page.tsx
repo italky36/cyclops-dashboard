@@ -779,14 +779,69 @@ export default function NewDealPage() {
           margin-top: 24px;
         }
 
-        @media (max-width: 640px) {
+        @media (max-width: 767px) {
+          .breadcrumb {
+            font-size: 13px;
+          }
+
+          .form-layout {
+            gap: 16px;
+          }
+
+          .card-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+          }
+
           .payment-types {
             grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+          }
+
+          .payment-type {
+            padding: 14px 10px;
+            font-size: 11px;
+          }
+
+          .type-icon {
+            font-size: 18px;
           }
 
           .form-row,
           .form-row-3 {
             grid-template-columns: 1fr;
+            gap: 0;
+          }
+
+          .recipient-card {
+            padding: 16px;
+          }
+
+          .form-actions {
+            flex-direction: column-reverse;
+            gap: 10px;
+          }
+
+          .form-actions .btn {
+            width: 100%;
+          }
+
+          .deal-summary {
+            padding: 14px;
+          }
+
+          .summary-row {
+            font-size: 13px;
+          }
+
+          .commission-info {
+            font-size: 12px;
+            padding: 12px;
+          }
+
+          .error-message {
+            font-size: 13px;
           }
         }
       `}</style>
