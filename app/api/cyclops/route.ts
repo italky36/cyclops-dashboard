@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
         method,
         params,
         error: result.error,
-        errorMeta: result.error?.meta ? JSON.stringify(result.error.meta) : null,
+        errorMeta: (result.error as any)?.meta ? JSON.stringify((result.error as any).meta) : null,
       });
     }
 
