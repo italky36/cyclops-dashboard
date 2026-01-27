@@ -95,8 +95,36 @@ export class CyclopsClient {
       } catch {
         responseText = '';
       }
-      const details = responseText ? `: ${responseText}` : '';
-      throw new Error(`HTTP ${response.status}: ${response.statusText}${details}`);
+
+      // Формируем понятное сообщение об ошибке
+      let errorMessage = '';
+      switch (response.status) {
+        case 403:
+          errorMessage = 'Доступ запрещён (403). Возможные причины:\n' +
+            '• Неверная подпись запроса (проверьте приватный ключ)\n' +
+            '• Неверный sign-thumbprint или sign-system\n' +
+            '• IP-адрес сервера не добавлен в белый список Tochka\n' +
+            '• Срок действия сертификата истёк';
+          break;
+        case 401:
+          errorMessage = 'Ошибка аутентификации (401). Проверьте настройки ключей в разделе Настройки.';
+          break;
+        case 400:
+          errorMessage = `Неверный запрос (400): ${responseText || 'проверьте параметры'}`;
+          break;
+        case 500:
+          errorMessage = 'Внутренняя ошибка сервера Cyclops (500). Попробуйте позже.';
+          break;
+        case 503:
+          errorMessage = 'Сервер Cyclops недоступен (503). Попробуйте позже.';
+          break;
+        default:
+          errorMessage = `HTTP ${response.status}: ${response.statusText}${responseText ? `: ${responseText}` : ''}`;
+      }
+
+      const error = new Error(errorMessage);
+      (error as Error & { statusCode: number }).statusCode = response.status;
+      throw error;
     }
 
     return response.json();
