@@ -112,10 +112,11 @@ export default function PayoutsPage() {
     inFlight.current.add('beneficiaries');
     try {
       const response = await listBeneficiaries({ is_active: true });
-      if (Array.isArray(response.result)) {
-        setBeneficiaries(response.result);
+      const list = response.result?.beneficiaries;
+      if (Array.isArray(list)) {
+        setBeneficiaries(list);
         const names: Record<string, string> = {};
-        response.result.forEach((b: Beneficiary) => {
+        list.forEach((b: Beneficiary) => {
           names[b.beneficiary_id] = b.name ||
             (b.first_name && b.last_name ? `${b.last_name} ${b.first_name}` : b.inn);
         });

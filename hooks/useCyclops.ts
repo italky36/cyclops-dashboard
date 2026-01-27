@@ -12,6 +12,15 @@ interface CyclopsState {
   error: string | null;
 }
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const requestCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    promise: Promise<JsonRpcResponse<unknown>>;
+  }
+>();
+
 export function useCyclops({ layer }: UseCyclopsOptions) {
   const [state, setState] = useState<CyclopsState>({
     loading: false,
@@ -25,27 +34,61 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     setState({ loading: true, error: null });
 
     try {
-      const response = await fetch('/api/cyclops', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ layer, method, params }),
-      });
+      const cacheableMethods = new Set(['list_beneficiary', 'get_beneficiary']);
+      const cacheKey = cacheableMethods.has(method)
+        ? `${method}:${layer}:${JSON.stringify(params || {})}`
+        : null;
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Request failed');
+      if (cacheKey) {
+        const cached = requestCache.get(cacheKey);
+        const now = Date.now();
+        if (cached && cached.expiresAt > now) {
+          const data = await cached.promise;
+          setState({ loading: false, error: null });
+          return data as JsonRpcResponse<T>;
+        }
       }
 
-      if (data.error) {
-        throw new Error(data.error.message || JSON.stringify(data.error));
+      const requestPromise = (async () => {
+        const response = await fetch('/api/cyclops', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ layer, method, params }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Request failed');
+        }
+
+        if (data.error) {
+          throw new Error(data.error.message || JSON.stringify(data.error));
+        }
+
+        return data as JsonRpcResponse<T>;
+      })();
+
+      if (cacheKey) {
+        requestCache.set(cacheKey, {
+          promise: requestPromise,
+          expiresAt: Date.now() + CACHE_TTL_MS,
+        });
       }
 
+      const data = await requestPromise;
       setState({ loading: false, error: null });
-      return data;
+      return data as JsonRpcResponse<T>;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       setState({ loading: false, error: message });
+      if (error instanceof Error) {
+        // Drop cached failures so next attempt can retry
+        if (method === 'list_beneficiary' || method === 'get_beneficiary') {
+          const cacheKey = `${method}:${layer}:${JSON.stringify(params || {})}`;
+          requestCache.delete(cacheKey);
+        }
+      }
       throw error;
     }
   }, [layer]);
@@ -85,7 +128,12 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   );
 
   const listBeneficiaries = useCallback(
-    (filters?: { is_active?: boolean }) => call('list_beneficiary', filters),
+    (filters?: { is_active?: boolean; legal_type?: 'F' | 'I' | 'J'; inn?: string }) =>
+      call('list_beneficiary', {
+        page: 1,
+        per_page: 100,
+        filters: filters || {},
+      }),
     [call]
   );
 

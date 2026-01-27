@@ -58,8 +58,9 @@ export default function VirtualAccountsPage() {
       if (Array.isArray(accountsRes.result)) {
         setAccounts(accountsRes.result);
       }
-      if (Array.isArray(beneficiariesRes.result)) {
-        setBeneficiaries(beneficiariesRes.result);
+      const beneficiariesList = beneficiariesRes.result?.beneficiaries;
+      if (Array.isArray(beneficiariesList)) {
+        setBeneficiaries(beneficiariesList);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';

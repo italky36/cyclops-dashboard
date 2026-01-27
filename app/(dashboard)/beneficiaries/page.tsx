@@ -34,9 +34,9 @@ export default function BeneficiariesPage() {
     try {
       const filters = filter === 'all' ? {} : { is_active: filter === 'active' };
       const response = await cyclops.listBeneficiaries(filters);
-
-      if (Array.isArray(response.result)) {
-        setBeneficiaries(response.result);
+      const list = response.result?.beneficiaries;
+      if (Array.isArray(list)) {
+        setBeneficiaries(list);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';

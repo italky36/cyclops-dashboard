@@ -51,8 +51,9 @@ export default function DashboardPage() {
         ]);
 
         // Подсчёт статистики из ответов
-        const beneficiaries = Array.isArray(beneficiariesRes.result) 
-          ? beneficiariesRes.result.length : 0;
+        const beneficiariesList = beneficiariesRes.result?.beneficiaries;
+        const beneficiaries = Array.isArray(beneficiariesList)
+          ? beneficiariesList.length : 0;
         const virtualAccounts = Array.isArray(accountsRes.result)
           ? accountsRes.result.length : 0;
         const deals = Array.isArray(dealsRes.result)
