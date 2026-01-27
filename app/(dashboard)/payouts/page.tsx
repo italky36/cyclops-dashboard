@@ -58,7 +58,7 @@ interface PayoutSchedule {
 export default function PayoutsPage() {
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
-  const cyclops = useCyclops({ layer });
+  const { listBeneficiaries } = useCyclops({ layer });
 
   const [activeTab, setActiveTab] = useState<'manual' | 'history' | 'schedule'>('manual');
 
@@ -88,7 +88,7 @@ export default function PayoutsPage() {
 
   const loadBeneficiaries = useCallback(async () => {
     try {
-      const response = await cyclops.listBeneficiaries({ is_active: true });
+      const response = await listBeneficiaries({ is_active: true });
       if (Array.isArray(response.result)) {
         setBeneficiaries(response.result);
         const names: Record<string, string> = {};
@@ -101,7 +101,7 @@ export default function PayoutsPage() {
     } catch (error) {
       console.error('Failed to load beneficiaries:', error);
     }
-  }, [cyclops]);
+  }, [listBeneficiaries]);
 
   const loadBeneficiaryIds = async () => {
     try {
