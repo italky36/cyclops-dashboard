@@ -172,13 +172,13 @@ export async function POST(request: NextRequest) {
         const typed = result as JsonRpcResponse<ListBeneficiariesResult>;
         const list = typed.result?.beneficiaries;
         if (Array.isArray(list)) {
-          upsertBeneficiariesFromList(list as any[]);
+          upsertBeneficiariesFromList(list);
           const ids = list
-            .map((b: any) => String(b.id || b.beneficiary_id || ''))
+            .map((b) => String(b.id || b.beneficiary_id || ''))
             .filter((id) => id && id !== 'undefined');
           const cached = getCachedBeneficiariesByIds(ids);
           if (typed.result) {
-            typed.result.beneficiaries = mapCachedToApi(list as any[], cached) as any;
+            typed.result.beneficiaries = mapCachedToApi(list, cached);
           }
         }
       } catch (cacheError) {
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
         const typed = result as JsonRpcResponse<GetBeneficiaryResult>;
         const detail = typed.result?.beneficiary;
         if (detail) {
-          upsertBeneficiaryFromDetail(detail as any);
+          upsertBeneficiaryFromDetail(detail);
         }
       } catch (cacheError) {
         console.error('[Cyclops API] cache get_beneficiary failed:', cacheError);
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
         method,
         params,
         error: result.error,
-        errorMeta: (result.error as any)?.meta ? JSON.stringify((result.error as any).meta) : null,
+        errorMeta: result.error.meta ? JSON.stringify(result.error.meta) : null,
       });
     }
 

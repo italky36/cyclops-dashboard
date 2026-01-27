@@ -1,51 +1,5 @@
 import { getDb } from '@/lib/db';
-
-type BeneficiaryListItem = {
-  id?: string;
-  beneficiary_id?: string;
-  inn?: string;
-  is_active?: boolean;
-  legal_type?: string;
-  nominal_account_code?: string;
-  nominal_account_bic?: string;
-  beneficiary_data?: {
-    name?: string;
-    first_name?: string;
-    middle_name?: string;
-    last_name?: string;
-    kpp?: string;
-    ogrn?: string;
-    ogrnip?: string;
-    birth_date?: string;
-  };
-};
-
-type BeneficiaryDetail = {
-  id?: string;
-  beneficiary_id?: string;
-  inn?: string;
-  is_active?: boolean;
-  legal_type?: string;
-  beneficiary_data?: {
-    name?: string;
-    first_name?: string;
-    middle_name?: string;
-    last_name?: string;
-    kpp?: string;
-    ogrn?: string;
-    ogrnip?: string;
-    birth_date?: string;
-  };
-  nominal_account?: {
-    code?: string;
-    bic?: string;
-  };
-  nominal_account_code?: string;
-  nominal_account_bic?: string;
-  is_added_to_ms?: boolean;
-  created_at?: string;
-  updated_at?: string;
-};
+import type { BeneficiaryListItem, BeneficiaryDetail } from '@/types/cyclops';
 
 export type CachedBeneficiary = {
   beneficiary_id: string;
@@ -239,8 +193,8 @@ export function mapCachedToApi(
         birth_date: cachedItem.birth_date || item.beneficiary_data?.birth_date,
       },
       is_added_to_ms: cachedItem.is_added_to_ms ?? item.is_added_to_ms,
-      created_at: cachedItem.created_at || (item as any).created_at,
-      updated_at: cachedItem.updated_at || (item as any).updated_at,
+      created_at: cachedItem.created_at || item.created_at,
+      updated_at: cachedItem.updated_at || item.updated_at,
     };
   });
 }

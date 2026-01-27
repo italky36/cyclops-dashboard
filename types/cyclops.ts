@@ -24,6 +24,7 @@ export interface JsonRpcResponse<T = unknown> {
     code: number;
     message: string;
     data?: unknown;
+    meta?: unknown;
   };
 }
 
@@ -81,10 +82,11 @@ export interface BeneficiaryResponse {
 }
 
 export interface BeneficiaryListItem {
-  id: string;
-  inn: string;
-  is_active: boolean;
-  legal_type: 'F' | 'I' | 'J';
+  id?: string;
+  beneficiary_id?: string;
+  inn?: string;
+  is_active?: boolean;
+  legal_type?: string;
   nominal_account_code?: string;
   nominal_account_bic?: string;
   beneficiary_data?: {
@@ -114,18 +116,19 @@ export interface ListBeneficiariesResult {
 }
 
 export interface BeneficiaryDetail {
-  id: string;
-  inn: string;
-  is_active: boolean;
-  legal_type: 'F' | 'I' | 'J';
-  ogrn?: string;
-  ogrnip?: string;
+  id?: string;
+  beneficiary_id?: string;
+  inn?: string;
+  is_active?: boolean;
+  legal_type?: string;
   beneficiary_data?: {
     name?: string;
     first_name?: string;
     middle_name?: string;
     last_name?: string;
     kpp?: string;
+    ogrn?: string;
+    ogrnip?: string;
     birth_date?: string;
     birth_place?: string;
     passport_series?: string;
@@ -136,13 +139,15 @@ export interface BeneficiaryDetail {
     reg_country_code?: string;
     tax_resident?: boolean;
   };
-  created_at?: string;
-  updated_at?: string;
   nominal_account?: {
     code?: string;
     bic?: string;
   };
+  nominal_account_code?: string;
+  nominal_account_bic?: string;
   is_added_to_ms?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface GetBeneficiaryResult {

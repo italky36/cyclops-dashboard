@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
+import type { BeneficiaryListItem } from '@/types/cyclops';
 
 interface Beneficiary {
   beneficiary_id: string;
@@ -39,23 +40,23 @@ export default function BeneficiariesPage() {
     return value as Beneficiary['type'];
   };
 
-  const normalizeBeneficiary = (b: Record<string, any>): Beneficiary => ({
+  const normalizeBeneficiary = (b: BeneficiaryListItem): Beneficiary => ({
     beneficiary_id: b.beneficiary_id || b.id || '',
-    type: mapLegalType(b.type || b.legal_type) || 'ul',
+    type: mapLegalType(b.legal_type) || 'ul',
     inn: b.inn || '',
-    name: b.name || b.beneficiary_data?.name,
-    first_name: b.first_name || b.beneficiary_data?.first_name,
-    middle_name: b.middle_name || b.beneficiary_data?.middle_name,
-    last_name: b.last_name || b.beneficiary_data?.last_name,
-    kpp: b.kpp || b.beneficiary_data?.kpp,
-    ogrnip: b.ogrnip || b.beneficiary_data?.ogrnip,
+    name: (b as Record<string, unknown>).name as string | undefined || b.beneficiary_data?.name,
+    first_name: (b as Record<string, unknown>).first_name as string | undefined || b.beneficiary_data?.first_name,
+    middle_name: (b as Record<string, unknown>).middle_name as string | undefined || b.beneficiary_data?.middle_name,
+    last_name: (b as Record<string, unknown>).last_name as string | undefined || b.beneficiary_data?.last_name,
+    kpp: (b as Record<string, unknown>).kpp as string | undefined || b.beneficiary_data?.kpp,
+    ogrnip: (b as Record<string, unknown>).ogrnip as string | undefined || b.beneficiary_data?.ogrnip,
     is_active: b.is_active ?? true,
     is_added_to_ms: typeof b.is_added_to_ms === 'boolean'
       ? b.is_added_to_ms
       : typeof b.is_added_to_ms === 'number'
         ? b.is_added_to_ms === 1
         : typeof b.is_added_to_ms === 'string'
-          ? b.is_added_to_ms === '1' || b.is_added_to_ms.toLowerCase() === 'true'
+          ? b.is_added_to_ms === '1' || (b.is_added_to_ms as string).toLowerCase() === 'true'
           : null,
     created_at: b.created_at || b.updated_at || null,
   });
