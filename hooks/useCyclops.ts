@@ -29,11 +29,11 @@ const requestCache = new Map<
 >();
 
 const clearCacheByPrefix = (prefix: string) => {
-  for (const key of requestCache.keys()) {
+  Array.from(requestCache.keys()).forEach((key) => {
     if (key.startsWith(prefix)) {
       requestCache.delete(key);
     }
-  }
+  });
 };
 
 export function useCyclops({ layer }: UseCyclopsOptions) {
