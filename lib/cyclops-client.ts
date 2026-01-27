@@ -12,6 +12,9 @@ const ENDPOINTS: Record<Layer, string> = {
   prod: 'https://api.tochka.com/api/v1/cyclops/v2/jsonrpc',
 };
 
+// Таймаут для API запросов (15 секунд)
+const REQUEST_TIMEOUT = 15000;
+
 export class CyclopsClient {
   private config: CyclopsConfig;
   private endpoint: string;
@@ -69,16 +72,46 @@ export class CyclopsClient {
       });
     }
 
-    const response = await fetch(this.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'sign-data': signature,
-        'sign-thumbprint': this.config.signThumbprint,
-        'sign-system': this.config.signSystem,
-      },
-      body,
-    });
+    // Создаём AbortController для таймаута
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+    let response: Response;
+    try {
+      response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'sign-data': signature,
+          'sign-thumbprint': this.config.signThumbprint,
+          'sign-system': this.config.signSystem,
+        },
+        body,
+        signal: controller.signal,
+      });
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+
+      // Обработка ошибки таймаута
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        throw new Error(
+          'Превышено время ожидания ответа от сервера (15 сек).\n' +
+          'Возможные причины:\n' +
+          '• Сервер Cyclops недоступен\n' +
+          '• IP-адрес не в белом списке Tochka\n' +
+          '• Проблемы с сетевым соединением'
+        );
+      }
+
+      // Обработка сетевых ошибок
+      if (fetchError instanceof Error) {
+        throw new Error(`Ошибка сети: ${fetchError.message}`);
+      }
+
+      throw fetchError;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (process.env.NODE_ENV === 'development') {
       console.info('[Cyclops] response', {
