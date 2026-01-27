@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
+import type { BeneficiaryListItem } from '@/types/cyclops';
 
 interface Beneficiary {
   beneficiary_id: string;
@@ -114,14 +115,14 @@ export default function PayoutsPage() {
       const response = await listBeneficiaries({ is_active: true });
       const list = response.result?.beneficiaries;
       if (Array.isArray(list)) {
-        const mapped = list.map((b: any) => ({
-          beneficiary_id: b.beneficiary_id || b.id || '',
-          type: b.type || (b.legal_type === 'F' ? 'fl' : b.legal_type === 'I' ? 'ip' : 'ul'),
+        const mapped = list.map((b: BeneficiaryListItem) => ({
+          beneficiary_id: b.id || '',
+          type: b.legal_type === 'F' ? 'fl' : b.legal_type === 'I' ? 'ip' : 'ul',
           inn: b.inn,
-          name: b.name || b.beneficiary_data?.name,
-          first_name: b.first_name || b.beneficiary_data?.first_name,
-          last_name: b.last_name || b.beneficiary_data?.last_name,
-          is_active: b.is_active ?? true,
+          name: b.beneficiary_data?.name,
+          first_name: b.beneficiary_data?.first_name,
+          last_name: b.beneficiary_data?.last_name,
+          is_active: b.is_active,
         })) as Beneficiary[];
         setBeneficiaries(mapped.filter((b) => b.beneficiary_id));
         const names: Record<string, string> = {};
