@@ -70,7 +70,10 @@ export default function NewDealPage() {
             accountIds.map(async (accountId: string) => {
               try {
                 const detailsRes = await cyclops.getVirtualAccount(accountId);
-                const details = detailsRes.result?.virtual_account;
+                const detailsResult = detailsRes.result as Record<string, unknown> | undefined;
+                const details = detailsResult && 'virtual_account' in detailsResult
+                  ? (detailsResult as { virtual_account?: any }).virtual_account
+                  : undefined;
                 if (!details) return null;
                 return {
                   virtual_account_id: details.code || accountId,
