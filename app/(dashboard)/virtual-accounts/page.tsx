@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
+import type { BeneficiaryListItem } from '@/types/cyclops';
 
 interface VirtualAccount {
   virtual_account_id: string;
@@ -83,20 +84,14 @@ export default function VirtualAccountsPage() {
       }
       const beneficiariesList = beneficiariesRes.result?.beneficiaries;
       if (Array.isArray(beneficiariesList)) {
-        const mapped = beneficiariesList.map((b: Beneficiary) => {
-          const beneficiaryId = b.beneficiary_id || b.id || '';
-          let type = b.type;
-          if (!type && b.legal_type) {
-            if (b.legal_type === 'F') type = 'fl';
-            else if (b.legal_type === 'I') type = 'ip';
-            else if (b.legal_type === 'J') type = 'ul';
-          }
-          return {
-            ...b,
-            beneficiary_id: beneficiaryId,
-            type: type || 'ul',
-          };
-        });
+        const mapped = beneficiariesList.map((b: BeneficiaryListItem) => ({
+          beneficiary_id: b.id || '',
+          type: b.legal_type === 'F' ? 'fl' : b.legal_type === 'I' ? 'ip' : 'ul',
+          inn: b.inn,
+          name: b.beneficiary_data?.name,
+          first_name: b.beneficiary_data?.first_name,
+          last_name: b.beneficiary_data?.last_name,
+        })) as Beneficiary[];
         setBeneficiaries(mapped);
       }
     } catch (err) {
