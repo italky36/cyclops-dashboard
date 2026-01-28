@@ -19,7 +19,6 @@ import {
   createLogEntry,
   logCyclopsRequest,
 } from '@/lib/cyclops-errors';
-import { createBeneficiarySchema, validateParams } from '@/lib/cyclops-validators';
 import type { Layer, GetBeneficiaryResult, ListBeneficiariesResult, JsonRpcResponse, CyclopsError } from '@/types/cyclops';
 import fs from 'fs/promises';
 import path from 'path';
@@ -115,10 +114,10 @@ export async function POST(request: NextRequest) {
     // Безопасность: проверяем разрешённые методы
     const allowedMethods = [
       // Бенефициары
-      'create_beneficiary',
       'create_beneficiary_ul',
       'create_beneficiary_ip',
       'create_beneficiary_fl',
+      'add_beneficiary_documents_data',
       'update_beneficiary_ul',
       'update_beneficiary_ip',
       'update_beneficiary_fl',
@@ -173,17 +172,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let effectiveParams = params || {};
-    if (method === 'create_beneficiary') {
-      const validation = validateParams(createBeneficiarySchema, params || {});
-      if (!validation.success) {
-        return NextResponse.json(
-          { error: 'Validation error', details: validation.errors },
-          { status: 400 }
-        );
-      }
-      effectiveParams = validation.data;
-    }
+    const effectiveParams = params || {};
 
     // Методы, которые инвалидируют кеш
     const cacheInvalidatingMethods: Record<string, string[]> = {
@@ -191,10 +180,13 @@ export async function POST(request: NextRequest) {
       'refund_virtual_account': ['get_virtual_account', 'list_virtual_transaction'],
       'transfer_between_virtual_accounts': ['get_virtual_account', 'list_virtual_transaction'],
       'transfer_between_virtual_accounts_v2': ['get_virtual_account', 'list_virtual_transaction'],
-      'create_beneficiary': ['list_beneficiary'],
       'create_beneficiary_ul': ['list_beneficiary'],
       'create_beneficiary_ip': ['list_beneficiary'],
       'create_beneficiary_fl': ['list_beneficiary'],
+      'add_beneficiary_documents_data': ['list_beneficiary', 'get_beneficiary'],
+      'update_beneficiary_ul': ['list_beneficiary', 'get_beneficiary'],
+      'update_beneficiary_ip': ['list_beneficiary', 'get_beneficiary'],
+      'update_beneficiary_fl': ['list_beneficiary', 'get_beneficiary'],
       'activate_beneficiary': ['list_beneficiary', 'get_beneficiary'],
       'deactivate_beneficiary': ['list_beneficiary', 'get_beneficiary'],
     };
@@ -346,10 +338,10 @@ export async function GET() {
   return NextResponse.json({
     methods: {
       beneficiaries: [
-        'create_beneficiary',
         'create_beneficiary_ul',
         'create_beneficiary_ip',
         'create_beneficiary_fl',
+        'add_beneficiary_documents_data',
         'get_beneficiary',
         'list_beneficiary',
         'activate_beneficiary',

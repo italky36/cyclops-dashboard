@@ -4,7 +4,13 @@
  */
 
 import assert from 'assert';
-import { buildCreateBeneficiaryParams } from '../lib/beneficiary-requests';
+import {
+  buildCreateBeneficiaryIpParams,
+  buildCreateBeneficiaryFlParams,
+  buildUpdateBeneficiaryUlParams,
+  buildUpdateBeneficiaryIpParams,
+  buildUpdateBeneficiaryFlParams,
+} from '../lib/beneficiary-requests';
 import { getStatusCheckWindow } from '../lib/beneficiary-status';
 import { accountNumberSchema, bankCodeSchema, inn12Schema } from '../lib/cyclops-validators';
 import { processCyclopsError } from '../lib/cyclops-errors';
@@ -25,35 +31,92 @@ function test(name: string, fn: () => void) {
   }
 }
 
-console.log('\n=== Тесты создания бенефициаров F/I ===\n');
+console.log('\n=== Тесты создания бенефициаров IP/FL ===\n');
 
-test('buildCreateBeneficiaryParams: F без nominal_accoun_data', () => {
-  const params = buildCreateBeneficiaryParams({
-    legal_type: 'F',
+test('buildCreateBeneficiaryIpParams: без номинального счета', () => {
+  const params = buildCreateBeneficiaryIpParams({
     inn: '770708389312',
-    registration_address: 'г. Москва, ул. Примерная, д. 1',
+    beneficiary_data: {
+      first_name: 'Иван',
+      last_name: 'Иванов',
+    },
   });
 
-  assert.strictEqual(params.legal_type, 'F');
   assert.strictEqual(params.inn, '770708389312');
-  assert.strictEqual(params.beneficiary_data.registration_address, 'г. Москва, ул. Примерная, д. 1');
-  assert.strictEqual(Object.prototype.hasOwnProperty.call(params, 'nominal_accoun_data'), false);
+  assert.strictEqual(params.beneficiary_data.first_name, 'Иван');
+  assert.strictEqual(params.beneficiary_data.last_name, 'Иванов');
+  assert.strictEqual(typeof params.nominal_account_code, 'undefined');
 });
 
-test('buildCreateBeneficiaryParams: I с nominal_accoun_data', () => {
-  const params = buildCreateBeneficiaryParams({
-    legal_type: 'I',
+test('buildCreateBeneficiaryFlParams: с номинальным счетом', () => {
+  const params = buildCreateBeneficiaryFlParams({
     inn: '770708389312',
-    registration_address: 'г. Москва, ул. Примерная, д. 1',
     nominal_account_code: '40702810000000000001',
     nominal_account_bic: '044525225',
+    beneficiary_data: {
+      first_name: 'Иван',
+      last_name: 'Иванов',
+      birth_date: '1990-01-24',
+      birth_place: 'г. Свердловск',
+      passport_number: '123456',
+      passport_date: '2020-01-01',
+      registration_address: 'г. Москва, ул. Примерная, д. 1',
+    },
   });
 
-  assert.strictEqual(params.legal_type, 'I');
-  assert.deepStrictEqual(params.nominal_accoun_data, {
-    code: '40702810000000000001',
-    bic: '044525225',
+  assert.strictEqual(params.nominal_account_code, '40702810000000000001');
+  assert.strictEqual(params.nominal_account_bic, '044525225');
+});
+
+test('buildUpdateBeneficiaryUlParams: нормализует КПП и ОГРН', () => {
+  const params = buildUpdateBeneficiaryUlParams({
+    beneficiary_id: 'test-id',
+    beneficiary_data: {
+      name: ' ООО "Рога и Копыта" ',
+      kpp: '246-301-001',
+      ogrn: '1 2 3 4 5 6 7 8 9 0 1 2 3 4 5',
+    },
   });
+
+  assert.strictEqual(params.beneficiary_data.name, 'ООО "Рога и Копыта"');
+  assert.strictEqual(params.beneficiary_data.kpp, '246301001');
+  assert.strictEqual(params.beneficiary_data.ogrn, '123456789012345');
+  assert.strictEqual(params.beneficiary_data.is_active_activity, true);
+});
+
+test('buildUpdateBeneficiaryIpParams: тримит ФИО и задаёт tax_resident', () => {
+  const params = buildUpdateBeneficiaryIpParams({
+    beneficiary_id: 'test-id',
+    beneficiary_data: {
+      first_name: ' Иван ',
+      last_name: ' Иванов ',
+    },
+  });
+
+  assert.strictEqual(params.beneficiary_data.first_name, 'Иван');
+  assert.strictEqual(params.beneficiary_data.last_name, 'Иванов');
+  assert.strictEqual(params.beneficiary_data.tax_resident, true);
+});
+
+test('buildUpdateBeneficiaryFlParams: нормализует паспорт и адрес', () => {
+  const params = buildUpdateBeneficiaryFlParams({
+    beneficiary_id: 'test-id',
+    beneficiary_data: {
+      first_name: 'Иван',
+      last_name: 'Иванов',
+      birth_date: '1990-01-24',
+      birth_place: ' г. Свердловск ',
+      passport_series: '65 09',
+      passport_number: '12 34 56',
+      passport_date: '2020-01-01',
+      registration_address: ' г. Москва, ул. Примерная ',
+    },
+  });
+
+  assert.strictEqual(params.beneficiary_data.birth_place, 'г. Свердловск');
+  assert.strictEqual(params.beneficiary_data.passport_series, '6509');
+  assert.strictEqual(params.beneficiary_data.passport_number, '123456');
+  assert.strictEqual(params.beneficiary_data.registration_address, 'г. Москва, ул. Примерная');
 });
 
 test('inn12Schema: принимает 12 цифр', () => {

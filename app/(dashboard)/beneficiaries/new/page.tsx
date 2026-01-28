@@ -35,7 +35,9 @@ export default function NewBeneficiaryPage() {
     inn: '',
     nominal_account_code: '',
     nominal_account_bic: '',
-    registration_address: '',
+    first_name: '',
+    middle_name: '',
+    last_name: '',
     tax_resident: true,
   });
 
@@ -44,7 +46,17 @@ export default function NewBeneficiaryPage() {
     inn: '',
     nominal_account_code: '',
     nominal_account_bic: '',
+    first_name: '',
+    middle_name: '',
+    last_name: '',
+    birth_date: '',
+    birth_place: '',
+    passport_series: '',
+    passport_number: '',
+    passport_date: '',
     registration_address: '',
+    resident: true,
+    reg_country_code: '',
     tax_resident: true,
   });
 
@@ -67,12 +79,21 @@ export default function NewBeneficiaryPage() {
     return validateDigits(value, length);
   };
 
+  const birthPlaceRegex = /^(?!.*[IVX]{5,})[-. ,А-Яа-яёЁ0-9\)\(IVX"\/\\№]+$/;
+  const minAddressLength = 15;
+
   const digitsOnly = (value: string) => value.replace(/\D+/g, '');
+  const upperTwoLetters = (value: string) => value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 2);
 
   const getCreatedId = (res: { result?: unknown }): string | null => {
-    const result = res.result as { id?: unknown; beneficiary_id?: unknown } | undefined;
+    const result = res.result as {
+      id?: unknown;
+      beneficiary_id?: unknown;
+      beneficiary?: { id?: unknown };
+    } | undefined;
     if (typeof result?.id === 'string') return result.id;
     if (typeof result?.beneficiary_id === 'string') return result.beneficiary_id;
+    if (typeof result?.beneficiary?.id === 'string') return result.beneficiary.id;
     return null;
   };
 
@@ -104,17 +125,17 @@ export default function NewBeneficiaryPage() {
       if (!validateDigits(ipData.inn, 12)) {
         errors.ip_inn = 'ИНН должен содержать 12 цифр';
       }
-      const hasNominalAccount = Boolean(ipData.nominal_account_code || ipData.nominal_account_bic);
-      if (hasNominalAccount) {
-        if (!validateDigits(ipData.nominal_account_code, 20)) {
-          errors.ip_nominal_account_code = 'Номер счёта должен содержать 20 цифр';
-        }
-        if (!validateDigits(ipData.nominal_account_bic, 9)) {
-          errors.ip_nominal_account_bic = 'БИК должен содержать 9 цифр';
-        }
+      if (!validateOptionalDigits(ipData.nominal_account_code, 20)) {
+        errors.ip_nominal_account_code = 'Номер счёта должен содержать 20 цифр';
       }
-      if (!ipData.registration_address.trim()) {
-        errors.ip_registration_address = 'Укажите адрес регистрации';
+      if (!validateOptionalDigits(ipData.nominal_account_bic, 9)) {
+        errors.ip_nominal_account_bic = 'БИК должен содержать 9 цифр';
+      }
+      if (!ipData.last_name.trim()) {
+        errors.ip_last_name = 'Укажите фамилию';
+      }
+      if (!ipData.first_name.trim()) {
+        errors.ip_first_name = 'Укажите имя';
       }
     }
 
@@ -122,17 +143,43 @@ export default function NewBeneficiaryPage() {
       if (!validateDigits(flData.inn, 12)) {
         errors.fl_inn = 'ИНН должен содержать 12 цифр';
       }
-      const hasNominalAccount = Boolean(flData.nominal_account_code || flData.nominal_account_bic);
-      if (hasNominalAccount) {
-        if (!validateDigits(flData.nominal_account_code, 20)) {
-          errors.fl_nominal_account_code = 'Номер счёта должен содержать 20 цифр';
-        }
-        if (!validateDigits(flData.nominal_account_bic, 9)) {
-          errors.fl_nominal_account_bic = 'БИК должен содержать 9 цифр';
-        }
+      if (!validateOptionalDigits(flData.nominal_account_code, 20)) {
+        errors.fl_nominal_account_code = 'Номер счёта должен содержать 20 цифр';
+      }
+      if (!validateOptionalDigits(flData.nominal_account_bic, 9)) {
+        errors.fl_nominal_account_bic = 'БИК должен содержать 9 цифр';
+      }
+      if (!flData.last_name.trim()) {
+        errors.fl_last_name = 'Укажите фамилию';
+      }
+      if (!flData.first_name.trim()) {
+        errors.fl_first_name = 'Укажите имя';
+      }
+      if (!flData.birth_date) {
+        errors.fl_birth_date = 'Укажите дату рождения';
+      }
+      if (!flData.birth_place.trim() || !birthPlaceRegex.test(flData.birth_place.trim())) {
+        errors.fl_birth_place = 'Недопустимый формат места рождения';
+      }
+      if (flData.passport_series && !validateDigits(flData.passport_series, 4)) {
+        errors.fl_passport_series = 'Серия паспорта: 4 цифры';
+      }
+      if (!validateDigits(flData.passport_number, 6)) {
+        errors.fl_passport_number = 'Номер паспорта: 6 цифр';
+      }
+      if (!flData.passport_date) {
+        errors.fl_passport_date = 'Укажите дату выдачи';
       }
       if (!flData.registration_address.trim()) {
         errors.fl_registration_address = 'Укажите адрес регистрации';
+      } else if (flData.registration_address.trim().length < minAddressLength) {
+        errors.fl_registration_address = `Адрес должен быть не короче ${minAddressLength} символов`;
+      }
+      if (!flData.resident) {
+        const code = flData.reg_country_code.trim().toUpperCase();
+        if (!/^[A-Z]{2}$/.test(code)) {
+          errors.fl_reg_country_code = 'Код страны должен быть из 2 латинских букв';
+        }
       }
     }
 
@@ -169,26 +216,40 @@ export default function NewBeneficiaryPage() {
           beneficiaryName = ulData.name;
           break;
         case 'ip':
-          response = await cyclops.createBeneficiary({
-            legal_type: 'I',
+          response = await cyclops.createBeneficiaryIP({
             inn: ipData.inn,
             nominal_account_code: ipData.nominal_account_code || undefined,
             nominal_account_bic: ipData.nominal_account_bic || undefined,
-            registration_address: ipData.registration_address,
-            tax_resident: ipData.tax_resident,
+            beneficiary_data: {
+              first_name: ipData.first_name,
+              middle_name: ipData.middle_name || undefined,
+              last_name: ipData.last_name,
+              tax_resident: ipData.tax_resident,
+            },
           });
-          beneficiaryName = ipData.inn;
+          beneficiaryName = `${ipData.last_name} ${ipData.first_name}`;
           break;
         case 'fl':
-          response = await cyclops.createBeneficiary({
-            legal_type: 'F',
+          response = await cyclops.createBeneficiaryFL({
             inn: flData.inn,
             nominal_account_code: flData.nominal_account_code || undefined,
             nominal_account_bic: flData.nominal_account_bic || undefined,
-            registration_address: flData.registration_address,
-            tax_resident: flData.tax_resident,
+            beneficiary_data: {
+              first_name: flData.first_name,
+              middle_name: flData.middle_name || undefined,
+              last_name: flData.last_name,
+              birth_date: flData.birth_date,
+              birth_place: flData.birth_place,
+              passport_series: flData.passport_series || undefined,
+              passport_number: flData.passport_number,
+              passport_date: flData.passport_date,
+              registration_address: flData.registration_address,
+              resident: flData.resident,
+              reg_country_code: flData.resident ? undefined : (flData.reg_country_code || undefined),
+              tax_resident: flData.tax_resident,
+            },
           });
-          beneficiaryName = flData.inn;
+          beneficiaryName = `${flData.last_name} ${flData.first_name}`;
           break;
       }
 
@@ -456,21 +517,44 @@ export default function NewBeneficiaryPage() {
                 />
               {fieldErrors.ip_inn && <span className="form-error">{fieldErrors.ip_inn}</span>}
             </div>
-            <div className="form-group">
-              <label className="form-label">Адрес регистрации *</label>
-              <textarea
-                className={`form-input form-textarea ${fieldErrors.ip_registration_address ? 'input-error' : ''}`}
-                placeholder="г. Москва, ул. Примерная, д. 1, кв. 1, 123456"
-                value={ipData.registration_address}
-                onChange={(e) => {
-                  setIpData({ ...ipData, registration_address: e.target.value });
-                  clearFieldError('ip_registration_address');
-                }}
-                required
-              />
-              {fieldErrors.ip_registration_address && (
-                <span className="form-error">{fieldErrors.ip_registration_address}</span>
-              )}
+            <div className="form-row form-row-3">
+              <div className="form-group">
+                <label className="form-label">Фамилия *</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.ip_last_name ? 'input-error' : ''}`}
+                  value={ipData.last_name}
+                  onChange={(e) => {
+                    setIpData({ ...ipData, last_name: e.target.value });
+                    clearFieldError('ip_last_name');
+                  }}
+                  required
+                />
+                {fieldErrors.ip_last_name && <span className="form-error">{fieldErrors.ip_last_name}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Имя *</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.ip_first_name ? 'input-error' : ''}`}
+                  value={ipData.first_name}
+                  onChange={(e) => {
+                    setIpData({ ...ipData, first_name: e.target.value });
+                    clearFieldError('ip_first_name');
+                  }}
+                  required
+                />
+                {fieldErrors.ip_first_name && <span className="form-error">{fieldErrors.ip_first_name}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Отчество</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={ipData.middle_name}
+                  onChange={(e) => setIpData({ ...ipData, middle_name: e.target.value })}
+                />
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Налоговый резидент РФ</label>
@@ -541,6 +625,125 @@ export default function NewBeneficiaryPage() {
                 />
               {fieldErrors.fl_inn && <span className="form-error">{fieldErrors.fl_inn}</span>}
             </div>
+            <div className="form-row form-row-3">
+              <div className="form-group">
+                <label className="form-label">Фамилия *</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.fl_last_name ? 'input-error' : ''}`}
+                  value={flData.last_name}
+                  onChange={(e) => {
+                    setFlData({ ...flData, last_name: e.target.value });
+                    clearFieldError('fl_last_name');
+                  }}
+                  required
+                />
+                {fieldErrors.fl_last_name && <span className="form-error">{fieldErrors.fl_last_name}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Имя *</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.fl_first_name ? 'input-error' : ''}`}
+                  value={flData.first_name}
+                  onChange={(e) => {
+                    setFlData({ ...flData, first_name: e.target.value });
+                    clearFieldError('fl_first_name');
+                  }}
+                  required
+                />
+                {fieldErrors.fl_first_name && <span className="form-error">{fieldErrors.fl_first_name}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Отчество</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={flData.middle_name}
+                  onChange={(e) => setFlData({ ...flData, middle_name: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Дата рождения *</label>
+                <input
+                  type="date"
+                  className={`form-input ${fieldErrors.fl_birth_date ? 'input-error' : ''}`}
+                  value={flData.birth_date}
+                  onChange={(e) => {
+                    setFlData({ ...flData, birth_date: e.target.value });
+                    clearFieldError('fl_birth_date');
+                  }}
+                  required
+                />
+                {fieldErrors.fl_birth_date && <span className="form-error">{fieldErrors.fl_birth_date}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Место рождения *</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.fl_birth_place ? 'input-error' : ''}`}
+                  placeholder="г. Москва"
+                  value={flData.birth_place}
+                  onChange={(e) => {
+                    setFlData({ ...flData, birth_place: e.target.value });
+                    clearFieldError('fl_birth_place');
+                  }}
+                  required
+                />
+                {fieldErrors.fl_birth_place && <span className="form-error">{fieldErrors.fl_birth_place}</span>}
+              </div>
+            </div>
+            <div className="form-row form-row-3">
+              <div className="form-group">
+                <label className="form-label">Серия паспорта</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.fl_passport_series ? 'input-error' : ''}`}
+                  placeholder="4516"
+                  maxLength={4}
+                  value={flData.passport_series}
+                  onChange={(e) => {
+                    setFlData({ ...flData, passport_series: digitsOnly(e.target.value).slice(0, 4) });
+                    clearFieldError('fl_passport_series');
+                  }}
+                />
+                {fieldErrors.fl_passport_series && <span className="form-error">{fieldErrors.fl_passport_series}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Номер паспорта *</label>
+                <input
+                  type="text"
+                  className={`form-input ${fieldErrors.fl_passport_number ? 'input-error' : ''}`}
+                  placeholder="123456"
+                  maxLength={6}
+                  value={flData.passport_number}
+                  onChange={(e) => {
+                    setFlData({ ...flData, passport_number: digitsOnly(e.target.value).slice(0, 6) });
+                    clearFieldError('fl_passport_number');
+                  }}
+                  required
+                />
+                {fieldErrors.fl_passport_number && (
+                  <span className="form-error">{fieldErrors.fl_passport_number}</span>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Дата выдачи *</label>
+                <input
+                  type="date"
+                  className={`form-input ${fieldErrors.fl_passport_date ? 'input-error' : ''}`}
+                  value={flData.passport_date}
+                  onChange={(e) => {
+                    setFlData({ ...flData, passport_date: e.target.value });
+                    clearFieldError('fl_passport_date');
+                  }}
+                  required
+                />
+                {fieldErrors.fl_passport_date && <span className="form-error">{fieldErrors.fl_passport_date}</span>}
+              </div>
+            </div>
             <div className="form-group">
               <label className="form-label">Адрес регистрации *</label>
               <textarea
@@ -553,8 +756,41 @@ export default function NewBeneficiaryPage() {
                 }}
                 required
               />
+              <p className="form-hint">Адрес должен полностью совпадать с адресом в паспорте</p>
               {fieldErrors.fl_registration_address && (
                 <span className="form-error">{fieldErrors.fl_registration_address}</span>
+              )}
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Резидент РФ</label>
+                <label className="form-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={flData.resident}
+                    onChange={(e) => setFlData({ ...flData, resident: e.target.checked })}
+                  />
+                  <span>Имеет паспорт РФ (резидент)</span>
+                </label>
+              </div>
+              {!flData.resident && (
+                <div className="form-group">
+                  <label className="form-label">Код гражданства (ОКСМ, alpha-2)</label>
+                  <input
+                    type="text"
+                    className={`form-input ${fieldErrors.fl_reg_country_code ? 'input-error' : ''}`}
+                    placeholder="US, DE, KZ"
+                    maxLength={2}
+                    value={flData.reg_country_code}
+                    onChange={(e) => {
+                      setFlData({ ...flData, reg_country_code: upperTwoLetters(e.target.value) });
+                      clearFieldError('fl_reg_country_code');
+                    }}
+                  />
+                  {fieldErrors.fl_reg_country_code && (
+                    <span className="form-error">{fieldErrors.fl_reg_country_code}</span>
+                  )}
+                </div>
               )}
             </div>
             <div className="form-group">

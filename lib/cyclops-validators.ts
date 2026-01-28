@@ -134,14 +134,6 @@ export const legalTypeSchema = z.enum(['F', 'I', 'J'], {
   message: 'legal_type должен быть F, I или J'
 });
 
-/**
- * Данные номинального счета
- */
-export const nominalAccountDataSchema = z.object({
-  code: accountNumberSchema,
-  bic: bankCodeSchema,
-});
-
 // ==================== Схемы для API методов ====================
 
 /**
@@ -152,18 +144,6 @@ export const createVirtualAccountSchema = z.object({
   virtual_account_type: virtualAccountTypeSchema.default('standard'),
 });
 
-/**
- * Схема для create_beneficiary (ФЛ/ИП)
- */
-export const createBeneficiarySchema = z.object({
-  legal_type: z.enum(['F', 'I'], { message: 'legal_type должен быть F или I' }),
-  inn: inn12Schema,
-  nominal_accoun_data: nominalAccountDataSchema.optional(),
-  beneficiary_data: z.object({
-    registration_address: z.string().min(1, 'Адрес регистрации обязателен'),
-    tax_resident: z.boolean().optional().default(true),
-  }),
-});
 
 /**
  * Схема для get_virtual_account

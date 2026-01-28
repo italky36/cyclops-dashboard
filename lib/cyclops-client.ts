@@ -4,8 +4,7 @@ import type {
   Layer, 
   JsonRpcRequest, 
   JsonRpcResponse,
-  CyclopsConfig,
-  CreateBeneficiaryParams
+  CyclopsConfig
 } from '@/types/cyclops';
 
 const ENDPOINTS: Record<Layer, string> = {
@@ -166,10 +165,6 @@ export class CyclopsClient {
 
   // ==================== БЕНЕФИЦИАРЫ ====================
 
-  async createBeneficiary(params: CreateBeneficiaryParams) {
-    return this.call('create_beneficiary', params);
-  }
-
   async createBeneficiaryUL(params: {
     inn: string;
     name: string;
@@ -201,6 +196,48 @@ export class CyclopsClient {
     registration_address: string;
   }) {
     return this.call('create_beneficiary_fl', params);
+  }
+
+  async updateBeneficiaryUL(params: {
+    beneficiary_id: string;
+    beneficiary_data: {
+      name: string;
+      kpp: string;
+      ogrn?: string;
+      is_active_activity?: boolean;
+    };
+  }) {
+    return this.call('update_beneficiary_ul', params);
+  }
+
+  async updateBeneficiaryIP(params: {
+    beneficiary_id: string;
+    beneficiary_data: {
+      first_name: string;
+      middle_name?: string;
+      last_name: string;
+      tax_resident?: boolean;
+    };
+  }) {
+    return this.call('update_beneficiary_ip', params);
+  }
+
+  async updateBeneficiaryFL(params: {
+    beneficiary_id: string;
+    beneficiary_data: {
+      first_name: string;
+      middle_name?: string;
+      last_name: string;
+      birth_date: string;
+      birth_place: string;
+      passport_series: string;
+      passport_number: string;
+      passport_date: string;
+      registration_address: string;
+      tax_resident?: boolean;
+    };
+  }) {
+    return this.call('update_beneficiary_fl', params);
   }
 
   async getBeneficiary(beneficiary_id: string) {

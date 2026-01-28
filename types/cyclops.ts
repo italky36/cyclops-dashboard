@@ -32,30 +32,97 @@ export interface JsonRpcResponse<T = unknown> {
 export type BeneficiaryType = 'ul' | 'ip' | 'fl';
 export type BeneficiaryLegalType = 'F' | 'I' | 'J';
 
-export interface NominalAccountData {
-  code: string;
-  bic: string;
+export type BeneficiaryDocumentType = 'internal_passport' | 'inn_f';
+
+export interface BeneficiaryDocumentBase {
+  type: BeneficiaryDocumentType;
 }
 
-export interface CreateBeneficiaryParams extends Record<string, unknown> {
-  legal_type: 'F' | 'I';
+export interface BeneficiaryDocumentPassport extends BeneficiaryDocumentBase {
+  type: 'internal_passport';
+  series: string;
+  number: string;
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  birth_date: string;
+  issuer_code: string;
+  issue_date: string;
+}
+
+export interface BeneficiaryDocumentInn extends BeneficiaryDocumentBase {
+  type: 'inn_f';
   inn: string;
-  nominal_accoun_data?: NominalAccountData;
+  birth_place: string;
+}
+
+export type BeneficiaryDocumentInput = BeneficiaryDocumentPassport | BeneficiaryDocumentInn;
+
+export interface AddBeneficiaryDocumentsParams extends Record<string, unknown> {
+  beneficiary_id: string;
+  documents: BeneficiaryDocumentInput[];
+}
+
+export interface BeneficiaryDocumentResponse extends BeneficiaryDocumentBase {
+  id?: string;
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
+  birth_place?: string;
+  birth_date?: string;
+  inn?: string;
+  series?: string;
+  number?: string;
+  issuer_code?: string;
+  issue_date?: string;
+  expired_at?: string | null;
+}
+
+export interface AddBeneficiaryDocumentsResult {
+  beneficiary_id: string;
+  documents: BeneficiaryDocumentResponse[];
+}
+
+export interface UpdateBeneficiaryUlParams extends Record<string, unknown> {
+  beneficiary_id: string;
   beneficiary_data: {
+    name: string;
+    kpp: string;
+    ogrn?: string;
+    is_active_activity?: boolean;
+  };
+}
+
+export interface UpdateBeneficiaryIpParams extends Record<string, unknown> {
+  beneficiary_id: string;
+  beneficiary_data: {
+    first_name: string;
+    middle_name?: string;
+    last_name: string;
+    tax_resident?: boolean;
+  };
+}
+
+export interface UpdateBeneficiaryFlParams extends Record<string, unknown> {
+  beneficiary_id: string;
+  beneficiary_data: {
+    first_name: string;
+    middle_name?: string;
+    last_name: string;
+    birth_date: string;
+    birth_place: string;
+    passport_series: string;
+    passport_number: string;
+    passport_date: string;
     registration_address: string;
     tax_resident?: boolean;
   };
 }
 
-export interface CreateBeneficiaryResult {
-  id: string;
-  inn: string;
-  legal_type: BeneficiaryLegalType;
-  nominal_account_code?: string;
-  nominal_account_bic?: string;
-  beneficiary_data?: {
-    registration_address?: string;
-    tax_resident?: boolean;
+export interface UpdateBeneficiaryResult {
+  beneficiary: {
+    inn?: string;
+    id?: string;
   };
 }
 
@@ -125,7 +192,12 @@ export interface BeneficiaryListItem {
     kpp?: string;
     ogrn?: string;
     ogrnip?: string;
+    is_active_activity?: boolean;
     birth_date?: string;
+    birth_place?: string;
+    passport_series?: string;
+    passport_number?: string;
+    passport_date?: string;
     registration_address?: string;
     tax_resident?: boolean;
   };
@@ -159,6 +231,7 @@ export interface BeneficiaryDetail {
     kpp?: string;
     ogrn?: string;
     ogrnip?: string;
+    is_active_activity?: boolean;
     birth_date?: string;
     birth_place?: string;
     passport_series?: string;

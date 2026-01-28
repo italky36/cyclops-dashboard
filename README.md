@@ -133,8 +133,9 @@ cyclops-dashboard/
 ### Основные методы
 
 #### Бенефициары
-- `create_beneficiary` — создание ИП/ФЛ (legal_type: F/I)
 - `create_beneficiary_ul` — создание ЮЛ
+- `create_beneficiary_ip` — создание ИП
+- `create_beneficiary_fl` — создание ФЛ
 - `list_beneficiary` — список
 - `activate_beneficiary` / `deactivate_beneficiary`
 
@@ -180,4 +181,3 @@ cyclops-dashboard/
 
 ### Внутри Точки
 - 24/7, мгновенно
-

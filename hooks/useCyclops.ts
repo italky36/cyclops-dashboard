@@ -2,7 +2,18 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { buildCreateBeneficiaryParams, type CreateBeneficiaryInput } from '@/lib/beneficiary-requests';
+import { 
+  buildCreateBeneficiaryIpParams,
+  buildCreateBeneficiaryFlParams,
+  buildUpdateBeneficiaryUlParams,
+  buildUpdateBeneficiaryIpParams,
+  buildUpdateBeneficiaryFlParams,
+  type CreateBeneficiaryIpInput,
+  type CreateBeneficiaryFlInput,
+  type UpdateBeneficiaryUlInput,
+  type UpdateBeneficiaryIpInput,
+  type UpdateBeneficiaryFlInput,
+} from '@/lib/beneficiary-requests';
 import type {
   Layer,
   JsonRpcResponse,
@@ -16,6 +27,9 @@ import type {
   TransferBetweenAccountsV2Result,
   GetVirtualAccountsTransferResult,
   OperationType,
+  AddBeneficiaryDocumentsParams,
+  AddBeneficiaryDocumentsResult,
+  UpdateBeneficiaryResult,
 } from '@/types/cyclops';
 
 interface UseCyclopsOptions {
@@ -177,16 +191,6 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
 
   // ==================== БЕНЕФИЦИАРЫ ====================
 
-  const createBeneficiary = useCallback(
-    async (input: CreateBeneficiaryInput) => {
-      const params = buildCreateBeneficiaryParams(input);
-      const result = await call('create_beneficiary', params);
-      clearCacheByPrefix(`list_beneficiary:${layer}:`);
-      return result;
-    },
-    [call, layer]
-  );
-
   const createBeneficiaryUL = useCallback(
     async (params: {
       inn: string;
@@ -206,6 +210,25 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     [call, layer]
   );
 
+  const createBeneficiaryIP = useCallback(
+    async (params: CreateBeneficiaryIpInput) => {
+      const requestParams = buildCreateBeneficiaryIpParams(params);
+      const result = await call('create_beneficiary_ip', requestParams);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
+
+  const createBeneficiaryFL = useCallback(
+    async (params: CreateBeneficiaryFlInput) => {
+      const requestParams = buildCreateBeneficiaryFlParams(params);
+      const result = await call('create_beneficiary_fl', requestParams);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
   const getBeneficiary = useCallback(
     (beneficiary_id: string) => call<GetBeneficiaryResult>('get_beneficiary', { beneficiary_id }),
     [call]
@@ -234,6 +257,49 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   const deactivateBeneficiary = useCallback(
     async (beneficiary_id: string) => {
       const result = await call('deactivate_beneficiary', { beneficiary_id });
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      clearCacheByPrefix(`get_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
+
+  const addBeneficiaryDocumentsData = useCallback(
+    async (params: AddBeneficiaryDocumentsParams) => {
+      const result = await call<AddBeneficiaryDocumentsResult>('add_beneficiary_documents_data', params);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      clearCacheByPrefix(`get_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
+
+  const updateBeneficiaryUL = useCallback(
+    async (params: UpdateBeneficiaryUlInput) => {
+      const requestParams = buildUpdateBeneficiaryUlParams(params);
+      const result = await call<UpdateBeneficiaryResult>('update_beneficiary_ul', requestParams);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      clearCacheByPrefix(`get_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
+
+  const updateBeneficiaryIP = useCallback(
+    async (params: UpdateBeneficiaryIpInput) => {
+      const requestParams = buildUpdateBeneficiaryIpParams(params);
+      const result = await call<UpdateBeneficiaryResult>('update_beneficiary_ip', requestParams);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      clearCacheByPrefix(`get_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
+
+  const updateBeneficiaryFL = useCallback(
+    async (params: UpdateBeneficiaryFlInput) => {
+      const requestParams = buildUpdateBeneficiaryFlParams(params);
+      const result = await call<UpdateBeneficiaryResult>('update_beneficiary_fl', requestParams);
       clearCacheByPrefix(`list_beneficiary:${layer}:`);
       clearCacheByPrefix(`get_beneficiary:${layer}:`);
       return result;
@@ -506,12 +572,17 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     ...state,
     call,
     // Бенефициары
-    createBeneficiary,
     createBeneficiaryUL,
+    createBeneficiaryIP,
+    createBeneficiaryFL,
     getBeneficiary,
     listBeneficiaries,
     activateBeneficiary,
     deactivateBeneficiary,
+    addBeneficiaryDocumentsData,
+    updateBeneficiaryUL,
+    updateBeneficiaryIP,
+    updateBeneficiaryFL,
     // Виртуальные счета
     createVirtualAccount,
     getVirtualAccount,
