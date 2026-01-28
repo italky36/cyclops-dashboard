@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
 import type { Layer } from '@/types/cyclops';
 
@@ -7,12 +8,69 @@ export function LayerSwitcher() {
   const layer = useAppStore((s) => s.layer);
   const setLayer = useAppStore((s) => s.setLayer);
   const connectionStatus = useAppStore((s) => s.connectionStatus);
+  const setConnectionStatus = useAppStore((s) => s.setConnectionStatus);
+  const hasInitialized = useRef(false);
 
   const handleChange = (newLayer: Layer) => {
     if (newLayer !== layer) {
       setLayer(newLayer);
     }
   };
+
+  useEffect(() => {
+    let isActive = true;
+
+    const checkConnection = async () => {
+      try {
+        const statusResponse = await fetch('/api/keys?action=status');
+        const statusData = await statusResponse.json();
+        const layers: Layer[] = ['pre', 'prod'];
+
+        await Promise.all(
+          layers.map(async (targetLayer) => {
+            if (!statusData?.[targetLayer]?.configured) {
+              if (isActive) {
+                setConnectionStatus(targetLayer, 'unknown');
+              }
+              return;
+            }
+
+            try {
+              const response = await fetch('/api/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'test-connection', layer: targetLayer }),
+              });
+              const data = await response.json();
+              if (isActive) {
+                setConnectionStatus(targetLayer, data.success ? 'connected' : 'error');
+              }
+            } catch {
+              if (isActive) {
+                setConnectionStatus(targetLayer, 'error');
+              }
+            }
+          })
+        );
+      } catch {
+        if (!isActive) return;
+        if (!hasInitialized.current) {
+          setConnectionStatus('pre', 'unknown');
+          setConnectionStatus('prod', 'unknown');
+        }
+      } finally {
+        hasInitialized.current = true;
+      }
+    };
+
+    checkConnection();
+    const intervalId = window.setInterval(checkConnection, 5 * 60 * 1000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [setConnectionStatus]);
 
   return (
     <div className="layer-switcher">

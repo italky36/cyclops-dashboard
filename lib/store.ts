@@ -9,6 +9,7 @@ interface AppState {
 
   // Статус подключения
   connectionStatus: Record<Layer, 'unknown' | 'connected' | 'error'>;
+  connectionStatusCheckedAt: Record<Layer, number | null>;
   setConnectionStatus: (layer: Layer, status: 'unknown' | 'connected' | 'error') => void;
 
   // Автоматические выплаты
@@ -43,9 +44,11 @@ export const useAppStore = create<AppState>()(
 
       // Статус подключения
       connectionStatus: { pre: 'unknown', prod: 'unknown' },
+      connectionStatusCheckedAt: { pre: null, prod: null },
       setConnectionStatus: (layer, status) =>
         set((state) => ({
           connectionStatus: { ...state.connectionStatus, [layer]: status },
+          connectionStatusCheckedAt: { ...state.connectionStatusCheckedAt, [layer]: Date.now() },
         })),
 
       // Автоматические выплаты
@@ -99,6 +102,8 @@ export const useAppStore = create<AppState>()(
       name: 'cyclops-dashboard-storage',
       partialize: (state) => ({
         layer: state.layer,
+        connectionStatus: state.connectionStatus,
+        connectionStatusCheckedAt: state.connectionStatusCheckedAt,
         autoPaymentRules: state.autoPaymentRules,
         favoriteBeneficiaries: state.favoriteBeneficiaries,
       }),
