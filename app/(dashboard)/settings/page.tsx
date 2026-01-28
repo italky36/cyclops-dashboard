@@ -69,7 +69,7 @@ export default function SettingsPage() {
     };
     const timeout = setTimeout(validateKey, 500);
     return () => clearTimeout(timeout);
-  }, [privateKeyText]);
+  }, [privateKeyText, signThumbprint]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

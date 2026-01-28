@@ -54,6 +54,11 @@ function ensureSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_beneficiaries_cache_inn
       ON beneficiaries_cache (inn);
 
+    CREATE TABLE IF NOT EXISTS beneficiary_status_checks (
+      beneficiary_id TEXT PRIMARY KEY,
+      last_checked_at INTEGER NOT NULL
+    );
+
     -- ============ VENDISTA: ТОРГОВЫЕ АВТОМАТЫ ============
 
     CREATE TABLE IF NOT EXISTS vending_machines (

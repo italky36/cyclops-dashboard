@@ -30,6 +30,34 @@ export interface JsonRpcResponse<T = unknown> {
 
 // Beneficiary Types
 export type BeneficiaryType = 'ul' | 'ip' | 'fl';
+export type BeneficiaryLegalType = 'F' | 'I' | 'J';
+
+export interface NominalAccountData {
+  code: string;
+  bic: string;
+}
+
+export interface CreateBeneficiaryParams extends Record<string, unknown> {
+  legal_type: 'F' | 'I';
+  inn: string;
+  nominal_accoun_data?: NominalAccountData;
+  beneficiary_data: {
+    registration_address: string;
+    tax_resident?: boolean;
+  };
+}
+
+export interface CreateBeneficiaryResult {
+  id: string;
+  inn: string;
+  legal_type: BeneficiaryLegalType;
+  nominal_account_code?: string;
+  nominal_account_bic?: string;
+  beneficiary_data?: {
+    registration_address?: string;
+    tax_resident?: boolean;
+  };
+}
 
 export interface BeneficiaryUL {
   type: 'ul';
@@ -98,6 +126,8 @@ export interface BeneficiaryListItem {
     ogrn?: string;
     ogrnip?: string;
     birth_date?: string;
+    registration_address?: string;
+    tax_resident?: boolean;
   };
   is_added_to_ms?: boolean;
   created_at?: string;

@@ -4,7 +4,8 @@ import type {
   Layer, 
   JsonRpcRequest, 
   JsonRpcResponse,
-  CyclopsConfig 
+  CyclopsConfig,
+  CreateBeneficiaryParams
 } from '@/types/cyclops';
 
 const ENDPOINTS: Record<Layer, string> = {
@@ -164,6 +165,10 @@ export class CyclopsClient {
   }
 
   // ==================== БЕНЕФИЦИАРЫ ====================
+
+  async createBeneficiary(params: CreateBeneficiaryParams) {
+    return this.call('create_beneficiary', params);
+  }
 
   async createBeneficiaryUL(params: {
     inn: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
@@ -24,7 +24,7 @@ const STATUS_LABELS: Record<string, { label: string; class: string }> = {
 export default function DealsPage() {
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
-  const cyclops = useCyclops({ layer });
+  const { listDeals, executeDeal, rejectDeal } = useCyclops({ layer });
 
   const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,11 +32,11 @@ export default function DealsPage() {
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const loadDeals = async () => {
+  const loadDeals = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await cyclops.listDeals();
+      const response = await listDeals();
       if (Array.isArray(response.result)) {
         setDeals(response.result);
       }
@@ -47,11 +47,11 @@ export default function DealsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [listDeals]);
 
   useEffect(() => {
     loadDeals();
-  }, [layer]);
+  }, [loadDeals]);
 
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {
@@ -69,7 +69,7 @@ export default function DealsPage() {
     
     setActionLoading(deal.deal_id);
     try {
-      await cyclops.executeDeal(deal.deal_id);
+      await executeDeal(deal.deal_id);
       addRecentAction({
         type: 'Исполнение сделки',
         description: `Сделка ${deal.deal_id.slice(0, 8)}... исполнена`,
@@ -89,7 +89,7 @@ export default function DealsPage() {
     
     setActionLoading(deal.deal_id);
     try {
-      await cyclops.rejectDeal(deal.deal_id);
+      await rejectDeal(deal.deal_id);
       addRecentAction({
         type: 'Отмена сделки',
         description: `Сделка ${deal.deal_id.slice(0, 8)}... отменена`,

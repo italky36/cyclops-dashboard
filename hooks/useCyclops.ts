@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { buildCreateBeneficiaryParams, type CreateBeneficiaryInput } from '@/lib/beneficiary-requests';
 import type {
   Layer,
   JsonRpcResponse,
@@ -15,7 +16,6 @@ import type {
   TransferBetweenAccountsV2Result,
   GetVirtualAccountsTransferResult,
   OperationType,
-  CYCLOPS_ERROR_CODES,
 } from '@/types/cyclops';
 
 interface UseCyclopsOptions {
@@ -177,6 +177,16 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
 
   // ==================== БЕНЕФИЦИАРЫ ====================
 
+  const createBeneficiary = useCallback(
+    async (input: CreateBeneficiaryInput) => {
+      const params = buildCreateBeneficiaryParams(input);
+      const result = await call('create_beneficiary', params);
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
+
   const createBeneficiaryUL = useCallback(
     async (params: {
       inn: string;
@@ -190,52 +200,6 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
       };
     }) => {
       const result = await call('create_beneficiary_ul', params);
-      clearCacheByPrefix(`list_beneficiary:${layer}:`);
-      return result;
-    },
-    [call, layer]
-  );
-
-  const createBeneficiaryIP = useCallback(
-    async (params: {
-      inn: string;
-      nominal_account_code?: string;
-      nominal_account_bic?: string;
-      beneficiary_data: {
-        first_name: string;
-        middle_name?: string;
-        last_name: string;
-        tax_resident?: boolean;
-      };
-    }) => {
-      const result = await call('create_beneficiary_ip', params);
-      clearCacheByPrefix(`list_beneficiary:${layer}:`);
-      return result;
-    },
-    [call, layer]
-  );
-
-  const createBeneficiaryFL = useCallback(
-    async (params: {
-      inn: string;
-      nominal_account_code?: string;
-      nominal_account_bic?: string;
-      beneficiary_data: {
-        first_name: string;
-        middle_name?: string;
-        last_name: string;
-        birth_date: string;
-        birth_place: string;
-        passport_series: string;
-        passport_number: string;
-        passport_date: string;
-        registration_address: string;
-        resident?: boolean;
-        reg_country_code?: string;
-        tax_resident?: boolean;
-      };
-    }) => {
-      const result = await call('create_beneficiary_fl', params);
       clearCacheByPrefix(`list_beneficiary:${layer}:`);
       return result;
     },
@@ -542,9 +506,8 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     ...state,
     call,
     // Бенефициары
+    createBeneficiary,
     createBeneficiaryUL,
-    createBeneficiaryIP,
-    createBeneficiaryFL,
     getBeneficiary,
     listBeneficiaries,
     activateBeneficiary,

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
+import { getStatusCheckWindow } from '@/lib/beneficiary-status';
+import { getLastStatusCheck, setLastStatusCheck } from '@/lib/beneficiary-status-storage';
 import type { BeneficiaryListItem } from '@/types/cyclops';
 
 interface Beneficiary {
@@ -21,6 +23,34 @@ interface Beneficiary {
   created_at?: string | null;
 }
 
+const mapLegalType = (value?: string) => {
+  if (value === 'F') return 'fl';
+  if (value === 'I') return 'ip';
+  if (value === 'J') return 'ul';
+  return value as Beneficiary['type'];
+};
+
+const normalizeBeneficiary = (b: BeneficiaryListItem): Beneficiary => ({
+  beneficiary_id: b.beneficiary_id || b.id || '',
+  type: mapLegalType(b.legal_type) || 'ul',
+  inn: b.inn || '',
+  name: (b as Record<string, unknown>).name as string | undefined || b.beneficiary_data?.name,
+  first_name: (b as Record<string, unknown>).first_name as string | undefined || b.beneficiary_data?.first_name,
+  middle_name: (b as Record<string, unknown>).middle_name as string | undefined || b.beneficiary_data?.middle_name,
+  last_name: (b as Record<string, unknown>).last_name as string | undefined || b.beneficiary_data?.last_name,
+  kpp: (b as Record<string, unknown>).kpp as string | undefined || b.beneficiary_data?.kpp,
+  ogrnip: (b as Record<string, unknown>).ogrnip as string | undefined || b.beneficiary_data?.ogrnip,
+  is_active: b.is_active ?? true,
+  is_added_to_ms: typeof b.is_added_to_ms === 'boolean'
+    ? b.is_added_to_ms
+    : typeof b.is_added_to_ms === 'number'
+      ? b.is_added_to_ms === 1
+      : typeof b.is_added_to_ms === 'string'
+        ? b.is_added_to_ms === '1' || (b.is_added_to_ms as string).toLowerCase() === 'true'
+        : null,
+  created_at: b.created_at || b.updated_at || null,
+});
+
 export default function BeneficiariesPage() {
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
@@ -32,34 +62,8 @@ export default function BeneficiariesPage() {
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [search, setSearch] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const mapLegalType = (value?: string) => {
-    if (value === 'F') return 'fl';
-    if (value === 'I') return 'ip';
-    if (value === 'J') return 'ul';
-    return value as Beneficiary['type'];
-  };
-
-  const normalizeBeneficiary = (b: BeneficiaryListItem): Beneficiary => ({
-    beneficiary_id: b.beneficiary_id || b.id || '',
-    type: mapLegalType(b.legal_type) || 'ul',
-    inn: b.inn || '',
-    name: (b as Record<string, unknown>).name as string | undefined || b.beneficiary_data?.name,
-    first_name: (b as Record<string, unknown>).first_name as string | undefined || b.beneficiary_data?.first_name,
-    middle_name: (b as Record<string, unknown>).middle_name as string | undefined || b.beneficiary_data?.middle_name,
-    last_name: (b as Record<string, unknown>).last_name as string | undefined || b.beneficiary_data?.last_name,
-    kpp: (b as Record<string, unknown>).kpp as string | undefined || b.beneficiary_data?.kpp,
-    ogrnip: (b as Record<string, unknown>).ogrnip as string | undefined || b.beneficiary_data?.ogrnip,
-    is_active: b.is_active ?? true,
-    is_added_to_ms: typeof b.is_added_to_ms === 'boolean'
-      ? b.is_added_to_ms
-      : typeof b.is_added_to_ms === 'number'
-        ? b.is_added_to_ms === 1
-        : typeof b.is_added_to_ms === 'string'
-          ? b.is_added_to_ms === '1' || (b.is_added_to_ms as string).toLowerCase() === 'true'
-          : null,
-    created_at: b.created_at || b.updated_at || null,
-  });
+  const [statusHint, setStatusHint] = useState<string | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
 
   const formatDateSafe = (value?: string | null) => {
     if (!value) return '—';
@@ -67,7 +71,10 @@ export default function BeneficiariesPage() {
     return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU');
   };
 
-  const loadBeneficiaries = async (forceRefresh = false) => {
+  const formatTime = (value: number) =>
+    new Date(value).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  const loadBeneficiaries = useCallback(async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -103,11 +110,17 @@ export default function BeneficiariesPage() {
       setIsRefreshing(false);
       setIsLoading(false);
     }
-  };
+  }, [filter, layer]);
 
   useEffect(() => {
     loadBeneficiaries(true);
-  }, [layer, filter]);
+  }, [loadBeneficiaries]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setCreatedId(params.get('created_id'));
+  }, []);
 
   const handleToggleActive = async (beneficiary: Beneficiary) => {
     try {
@@ -134,8 +147,20 @@ export default function BeneficiariesPage() {
 
   const handleRefreshStatus = async (beneficiaryId: string) => {
     try {
+      const lastCheckedAt = getLastStatusCheck(beneficiaryId);
+      const window = getStatusCheckWindow(lastCheckedAt);
+      if (!window.allowed) {
+        const remainingMinutes = Math.ceil(window.remainingMs / 60000);
+        setStatusHint(
+          `Следующая проверка статуса будет доступна в ${formatTime(window.nextAvailableAt)} (через ${remainingMinutes} мин.)`
+        );
+        return;
+      }
+
+      setLastStatusCheck(beneficiaryId);
+      setStatusHint(null);
       setIsRefreshing(true);
-      await fetch('/api/beneficiaries/cache', {
+      const response = await fetch('/api/beneficiaries/cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -144,9 +169,29 @@ export default function BeneficiariesPage() {
           beneficiary_id: beneficiaryId,
         }),
       });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Ошибка проверки статуса');
+      }
+      if (data?.skipped) {
+        setLastStatusCheck(beneficiaryId);
+        if (data.next_available_at) {
+          const nextAvailableAt = Date.parse(data.next_available_at);
+          if (!Number.isNaN(nextAvailableAt)) {
+            const remainingMinutes = Math.ceil((nextAvailableAt - Date.now()) / 60000);
+            setStatusHint(
+              `Следующая проверка статуса будет доступна в ${formatTime(nextAvailableAt)} (через ${remainingMinutes} мин.)`
+            );
+            return;
+          }
+        }
+        setStatusHint('Проверка статуса доступна раз в 5 минут для каждого бенефициара.');
+        return;
+      }
       await loadBeneficiaries();
     } catch (error) {
       console.error('Failed to refresh beneficiary:', error);
+      setStatusHint('Не удалось проверить статус. Попробуйте позже.');
     } finally {
       setIsRefreshing(false);
     }
@@ -240,6 +285,24 @@ export default function BeneficiariesPage() {
           </button>
         </div>
       </div>
+
+      {createdId && (
+        <div className="form-hint" style={{ marginBottom: 12 }}>
+          Создано в Cyclops
+          {createdId ? (
+            <>
+              {' '}ID: <span className="code">{createdId}</span>.
+            </>
+          ) : null}
+          {' '}Ожидаем регистрацию в мастер-системе.
+        </div>
+      )}
+
+      {statusHint && (
+        <div className="form-hint" style={{ marginBottom: 12 }}>
+          {statusHint}
+        </div>
+      )}
 
       {/* List */}
       <div className="card">
@@ -336,7 +399,7 @@ export default function BeneficiariesPage() {
                         <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => handleRefreshStatus(b.beneficiary_id)}
-                          title="Обновить статус"
+                          title="Проверить статус"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M23 4v6h-6" />

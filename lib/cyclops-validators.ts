@@ -47,6 +47,12 @@ export const innSchema = z.string()
   .regex(/^\d{10}$|^\d{12}$/, 'ИНН должен содержать 10 или 12 цифр');
 
 /**
+ * ИНН: ровно 12 цифр (ФЛ/ИП)
+ */
+export const inn12Schema = z.string()
+  .regex(/^\d{12}$/, 'ИНН должен содержать ровно 12 цифр');
+
+/**
  * ИНН опциональный (для физлиц)
  */
 export const innOptionalSchema = z.string()
@@ -128,6 +134,14 @@ export const legalTypeSchema = z.enum(['F', 'I', 'J'], {
   message: 'legal_type должен быть F, I или J'
 });
 
+/**
+ * Данные номинального счета
+ */
+export const nominalAccountDataSchema = z.object({
+  code: accountNumberSchema,
+  bic: bankCodeSchema,
+});
+
 // ==================== Схемы для API методов ====================
 
 /**
@@ -136,6 +150,19 @@ export const legalTypeSchema = z.enum(['F', 'I', 'J'], {
 export const createVirtualAccountSchema = z.object({
   beneficiary_id: uuidSchema,
   virtual_account_type: virtualAccountTypeSchema.default('standard'),
+});
+
+/**
+ * Схема для create_beneficiary (ФЛ/ИП)
+ */
+export const createBeneficiarySchema = z.object({
+  legal_type: z.enum(['F', 'I'], { message: 'legal_type должен быть F или I' }),
+  inn: inn12Schema,
+  nominal_accoun_data: nominalAccountDataSchema.optional(),
+  beneficiary_data: z.object({
+    registration_address: z.string().min(1, 'Адрес регистрации обязателен'),
+    tax_resident: z.boolean().optional().default(true),
+  }),
 });
 
 /**

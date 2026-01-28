@@ -9,8 +9,11 @@ import {
   upsertBeneficiariesFromList,
   upsertBeneficiaryFromDetail,
   getBeneficiariesLastSyncAt,
+  getBeneficiaryStatusCheck,
+  setBeneficiaryStatusCheck,
 } from '@/lib/beneficiaries-cache';
 import type { GetBeneficiaryResult, ListBeneficiariesResult } from '@/types/cyclops';
+import { getStatusCheckWindow } from '@/lib/beneficiary-status';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -114,6 +117,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'beneficiary_id required' }, { status: 400 });
       }
 
+      const lastCheckedAt = getBeneficiaryStatusCheck(beneficiary_id);
+      const window = getStatusCheckWindow(lastCheckedAt);
+      if (!window.allowed) {
+        return NextResponse.json({
+          skipped: true,
+          beneficiary_id,
+          retry_after_ms: window.remainingMs,
+          next_available_at: new Date(window.nextAvailableAt).toISOString(),
+        });
+      }
+
+      setBeneficiaryStatusCheck(beneficiary_id);
       const client = await getClient(layer);
       const response = await client.call<GetBeneficiaryResult>('get_beneficiary', { beneficiary_id });
       const detail = response?.result?.beneficiary;

@@ -38,6 +38,35 @@ interface VendingMachine {
   };
 }
 
+const mapLegalType = (value?: string) => {
+  if (value === 'F') return 'fl';
+  if (value === 'I') return 'ip';
+  if (value === 'J') return 'ul';
+  return value as Beneficiary['type'];
+};
+
+const normalizeBeneficiary = (b: BeneficiaryListItem | BeneficiaryDetail): Beneficiary => ({
+  beneficiary_id: b.beneficiary_id || b.id || '',
+  type: mapLegalType(b.legal_type) || 'ul',
+  inn: b.inn || '',
+  name: (b as Record<string, unknown>).name as string | undefined || b.beneficiary_data?.name,
+  first_name: (b as Record<string, unknown>).first_name as string | undefined || b.beneficiary_data?.first_name,
+  middle_name: (b as Record<string, unknown>).middle_name as string | undefined || b.beneficiary_data?.middle_name,
+  last_name: (b as Record<string, unknown>).last_name as string | undefined || b.beneficiary_data?.last_name,
+  kpp: (b as Record<string, unknown>).kpp as string | undefined || b.beneficiary_data?.kpp,
+  ogrnip: (b as Record<string, unknown>).ogrnip as string | undefined || b.beneficiary_data?.ogrnip,
+  birth_date: (b as Record<string, unknown>).birth_date as string | undefined || b.beneficiary_data?.birth_date,
+  is_active: b.is_active ?? true,
+  is_added_to_ms: typeof b.is_added_to_ms === 'boolean'
+    ? b.is_added_to_ms
+    : typeof b.is_added_to_ms === 'number'
+      ? b.is_added_to_ms === 1
+      : typeof b.is_added_to_ms === 'string'
+        ? b.is_added_to_ms === '1' || (b.is_added_to_ms as string).toLowerCase() === 'true'
+        : null,
+  created_at: b.created_at || b.updated_at || null,
+});
+
 export default function BeneficiaryDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -59,35 +88,6 @@ export default function BeneficiaryDetailPage() {
   const [activeTab, setActiveTab] = useState<'info' | 'machines'>('info');
   const inFlight = useRef(new Set<string>());
 
-  const mapLegalType = (value?: string) => {
-    if (value === 'F') return 'fl';
-    if (value === 'I') return 'ip';
-    if (value === 'J') return 'ul';
-    return value as Beneficiary['type'];
-  };
-
-  const normalizeBeneficiary = (b: BeneficiaryListItem | BeneficiaryDetail): Beneficiary => ({
-    beneficiary_id: b.beneficiary_id || b.id || '',
-    type: mapLegalType(b.legal_type) || 'ul',
-    inn: b.inn || '',
-    name: (b as Record<string, unknown>).name as string | undefined || b.beneficiary_data?.name,
-    first_name: (b as Record<string, unknown>).first_name as string | undefined || b.beneficiary_data?.first_name,
-    middle_name: (b as Record<string, unknown>).middle_name as string | undefined || b.beneficiary_data?.middle_name,
-    last_name: (b as Record<string, unknown>).last_name as string | undefined || b.beneficiary_data?.last_name,
-    kpp: (b as Record<string, unknown>).kpp as string | undefined || b.beneficiary_data?.kpp,
-    ogrnip: (b as Record<string, unknown>).ogrnip as string | undefined || b.beneficiary_data?.ogrnip,
-    birth_date: (b as Record<string, unknown>).birth_date as string | undefined || b.beneficiary_data?.birth_date,
-    is_active: b.is_active ?? true,
-    is_added_to_ms: typeof b.is_added_to_ms === 'boolean'
-      ? b.is_added_to_ms
-      : typeof b.is_added_to_ms === 'number'
-        ? b.is_added_to_ms === 1
-        : typeof b.is_added_to_ms === 'string'
-          ? b.is_added_to_ms === '1' || (b.is_added_to_ms as string).toLowerCase() === 'true'
-          : null,
-    created_at: b.created_at || b.updated_at || null,
-  });
-
   const formatDateSafe = (value?: string | null) => {
     if (!value) return '—';
     const date = new Date(value);
@@ -108,22 +108,13 @@ export default function BeneficiaryDetailPage() {
       if (data) {
         setBeneficiary(normalizeBeneficiary(data));
       }
-      await fetch('/api/beneficiaries/cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'refresh_one',
-          layer,
-          beneficiary_id,
-        }),
-      });
     } catch (error) {
       console.error('Failed to load beneficiary:', error);
     } finally {
       setIsLoading(false);
       inFlight.current.delete('beneficiary');
     }
-  }, [getBeneficiary, beneficiary_id, layer]);
+  }, [getBeneficiary, beneficiary_id]);
 
   const loadMachines = useCallback(async () => {
     if (inFlight.current.has('machines')) return;

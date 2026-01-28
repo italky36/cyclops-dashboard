@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
 
@@ -10,7 +10,14 @@ export default function DashboardPage() {
   const connectionStatus = useAppStore((s) => s.connectionStatus);
   const recentActions = useAppStore((s) => s.recentActions);
   
-  const cyclops = useCyclops({ layer });
+  const {
+    echo,
+    listBeneficiaries,
+    listVirtualAccounts,
+    listDeals,
+    listPayments,
+    getVirtualAccount,
+  } = useCyclops({ layer });
   
   const [stats, setStats] = useState({
     beneficiaries: 0,
@@ -23,83 +30,83 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Тестирование подключения
+  const testConnection = useCallback(async () => {
+    try {
+      await echo(`test-${Date.now()}`);
+      setConnectionStatus(layer, 'connected');
+    } catch {
+      setConnectionStatus(layer, 'error');
+    }
+  }, [echo, layer, setConnectionStatus]);
+
   useEffect(() => {
-    const testConnection = async () => {
-      try {
-        await cyclops.echo(`test-${Date.now()}`);
-        setConnectionStatus(layer, 'connected');
-      } catch {
-        setConnectionStatus(layer, 'error');
-      }
-    };
-    
     testConnection();
-  }, [layer]);
+  }, [testConnection]);
 
   // Загрузка статистики
-  useEffect(() => {
-    const loadStats = async () => {
-      if (connectionStatus[layer] !== 'connected') return;
-      
-      setIsLoading(true);
-      try {
-        const [beneficiariesRes, accountsRes, dealsRes, paymentsRes] = await Promise.all([
-          cyclops.listBeneficiaries({ is_active: true }),
-          cyclops.listVirtualAccounts(),
-          cyclops.listDeals(),
-          cyclops.listPayments({ identified: false }),
-        ]);
+  const loadStats = useCallback(async () => {
+    if (connectionStatus[layer] !== 'connected') return;
+    
+    setIsLoading(true);
+    try {
+      const [beneficiariesRes, accountsRes, dealsRes, paymentsRes] = await Promise.all([
+        listBeneficiaries({ is_active: true }),
+        listVirtualAccounts(),
+        listDeals(),
+        listPayments({ identified: false }),
+      ]);
 
-        // Подсчёт статистики из ответов
-        const beneficiariesList = beneficiariesRes.result?.beneficiaries;
-        const beneficiaries = Array.isArray(beneficiariesList)
-          ? beneficiariesList.length : 0;
-        const accountIds = Array.isArray(accountsRes.result?.virtual_accounts)
-          ? accountsRes.result.virtual_accounts
-          : [];
-        const virtualAccounts = accountIds.length;
-        const deals = Array.isArray(dealsRes.result)
-          ? dealsRes.result.length : 0;
-        const pendingPayments = Array.isArray(paymentsRes.result)
-          ? paymentsRes.result.length : 0;
+      // Подсчёт статистики из ответов
+      const beneficiariesList = beneficiariesRes.result?.beneficiaries;
+      const beneficiaries = Array.isArray(beneficiariesList)
+        ? beneficiariesList.length : 0;
+      const accountIds = Array.isArray(accountsRes.result?.virtual_accounts)
+        ? accountsRes.result.virtual_accounts
+        : [];
+      const virtualAccounts = accountIds.length;
+      const deals = Array.isArray(dealsRes.result)
+        ? dealsRes.result.length : 0;
+      const pendingPayments = Array.isArray(paymentsRes.result)
+        ? paymentsRes.result.length : 0;
 
-        // Подсчёт общего баланса
-        let totalBalance = 0;
-        if (accountIds.length > 0) {
-          const accountDetails = await Promise.all(
-            accountIds.map(async (accountId: string) => {
-              try {
-                const detailsRes = await cyclops.getVirtualAccount(accountId);
-                return detailsRes.result?.virtual_account || null;
-              } catch {
-                return null;
-              }
-            })
-          );
-          totalBalance = accountDetails.reduce((sum, acc) => {
-            if (!acc) return sum;
-            const cash = typeof acc.cash === 'number' ? acc.cash : 0;
-            const blocked = typeof acc.blocked_cash === 'number' ? acc.blocked_cash : 0;
-            return sum + cash + blocked;
-          }, 0);
-        }
-
-        setStats({
-          beneficiaries,
-          virtualAccounts,
-          deals,
-          pendingPayments,
-          totalBalance,
-        });
-      } catch (error) {
-        console.error('Failed to load stats:', error);
-      } finally {
-        setIsLoading(false);
+      // Подсчёт общего баланса
+      let totalBalance = 0;
+      if (accountIds.length > 0) {
+        const accountDetails = await Promise.all(
+          accountIds.map(async (accountId: string) => {
+            try {
+              const detailsRes = await getVirtualAccount(accountId);
+              return detailsRes.result?.virtual_account || null;
+            } catch {
+              return null;
+            }
+          })
+        );
+        totalBalance = accountDetails.reduce((sum, acc) => {
+          if (!acc) return sum;
+          const cash = typeof acc.cash === 'number' ? acc.cash : 0;
+          const blocked = typeof acc.blocked_cash === 'number' ? acc.blocked_cash : 0;
+          return sum + cash + blocked;
+        }, 0);
       }
-    };
 
+      setStats({
+        beneficiaries,
+        virtualAccounts,
+        deals,
+        pendingPayments,
+        totalBalance,
+      });
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [connectionStatus, getVirtualAccount, layer, listBeneficiaries, listDeals, listPayments, listVirtualAccounts]);
+
+  useEffect(() => {
     loadStats();
-  }, [layer, connectionStatus]);
+  }, [loadStats]);
 
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {

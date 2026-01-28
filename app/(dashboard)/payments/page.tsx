@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
 
@@ -40,7 +40,7 @@ const STATUS_LABELS: Record<string, { label: string; class: string }> = {
 export default function PaymentsPage() {
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
-  const cyclops = useCyclops({ layer });
+  const { listPayments, listVirtualAccounts, identifyPayment: identifyPaymentAction } = useCyclops({ layer });
 
   const [payments, setPayments] = useState<Payment[]>([]);
   const [virtualAccounts, setVirtualAccounts] = useState<VirtualAccount[]>([]);
@@ -49,18 +49,18 @@ export default function PaymentsPage() {
   const [filter, setFilter] = useState<'all' | 'unidentified' | 'incoming'>('all');
   
   // Модальное окно идентификации
-  const [identifyPayment, setIdentifyPayment] = useState<Payment | null>(null);
+  const [identifyPaymentItem, setIdentifyPaymentItem] = useState<Payment | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [identifyAmount, setIdentifyAmount] = useState<string>('');
   const [isIdentifying, setIsIdentifying] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const [paymentsRes, accountsRes] = await Promise.all([
-        cyclops.listPayments(filter === 'unidentified' ? { identified: false } : undefined),
-        cyclops.listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
+        listPayments(filter === 'unidentified' ? { identified: false } : undefined),
+        listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
       ]);
 
       if (Array.isArray(paymentsRes.result)) {
@@ -84,11 +84,11 @@ export default function PaymentsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filter, listPayments, listVirtualAccounts]);
 
   useEffect(() => {
     loadData();
-  }, [layer, filter]);
+  }, [loadData]);
 
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {
@@ -98,12 +98,12 @@ export default function PaymentsPage() {
   };
 
   const handleIdentify = async () => {
-    if (!identifyPayment || !selectedAccount || !identifyAmount) return;
+    if (!identifyPaymentItem || !selectedAccount || !identifyAmount) return;
 
     setIsIdentifying(true);
     try {
-      await cyclops.identifyPayment({
-        payment_id: identifyPayment.payment_id,
+      await identifyPaymentAction({
+        payment_id: identifyPaymentItem.payment_id,
         owners: [{
           virtual_account: selectedAccount,
           amount: parseFloat(identifyAmount),
@@ -116,7 +116,7 @@ export default function PaymentsPage() {
         layer,
       });
 
-      setIdentifyPayment(null);
+      setIdentifyPaymentItem(null);
       setSelectedAccount('');
       setIdentifyAmount('');
       await loadData();
@@ -129,7 +129,7 @@ export default function PaymentsPage() {
   };
 
   const openIdentifyModal = (payment: Payment) => {
-    setIdentifyPayment(payment);
+    setIdentifyPaymentItem(payment);
     setIdentifyAmount(payment.amount.toString());
   };
 
@@ -294,12 +294,12 @@ export default function PaymentsPage() {
       </div>
 
       {/* Identify Modal */}
-      {identifyPayment && (
-        <div className="modal-overlay" onClick={() => setIdentifyPayment(null)}>
+      {identifyPaymentItem && (
+        <div className="modal-overlay" onClick={() => setIdentifyPaymentItem(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Идентификация платежа</h3>
-              <button className="modal-close" onClick={() => setIdentifyPayment(null)}>
+              <button className="modal-close" onClick={() => setIdentifyPaymentItem(null)}>
                 ✕
               </button>
             </div>
@@ -307,18 +307,18 @@ export default function PaymentsPage() {
               <div className="payment-info">
                 <div className="info-row">
                   <span>Сумма платежа:</span>
-                  <span className="money money-positive">{formatMoney(identifyPayment.amount)}</span>
+                  <span className="money money-positive">{formatMoney(identifyPaymentItem.amount)}</span>
                 </div>
-                {identifyPayment.payer_name && (
+                {identifyPaymentItem.payer_name && (
                   <div className="info-row">
                     <span>Плательщик:</span>
-                    <span>{identifyPayment.payer_name}</span>
+                    <span>{identifyPaymentItem.payer_name}</span>
                   </div>
                 )}
-                {identifyPayment.purpose && (
+                {identifyPaymentItem.purpose && (
                   <div className="info-row">
                     <span>Назначение:</span>
-                    <span className="purpose-text">{identifyPayment.purpose}</span>
+                    <span className="purpose-text">{identifyPaymentItem.purpose}</span>
                   </div>
                 )}
               </div>
@@ -347,7 +347,7 @@ export default function PaymentsPage() {
                   className="form-input"
                   step="0.01"
                   min="0.01"
-                  max={identifyPayment.amount}
+                  max={identifyPaymentItem.amount}
                   value={identifyAmount}
                   onChange={(e) => setIdentifyAmount(e.target.value)}
                   required
@@ -360,7 +360,7 @@ export default function PaymentsPage() {
             <div className="modal-footer">
               <button 
                 className="btn btn-secondary"
-                onClick={() => setIdentifyPayment(null)}
+                onClick={() => setIdentifyPaymentItem(null)}
               >
                 Отмена
               </button>

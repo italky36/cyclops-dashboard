@@ -133,11 +133,14 @@ cyclops-dashboard/
 ### Основные методы
 
 #### Бенефициары
+- `create_beneficiary` — создание ИП/ФЛ (legal_type: F/I)
 - `create_beneficiary_ul` — создание ЮЛ
-- `create_beneficiary_ip` — создание ИП
-- `create_beneficiary_fl` — создание ФЛ
 - `list_beneficiary` — список
 - `activate_beneficiary` / `deactivate_beneficiary`
+
+Примечание: регистрация бенефициара в мастер-системе асинхронная.
+Поле `is_added_to_ms` обновляется через `get_beneficiary`; проверка статуса
+разрешена не чаще 1 раза в 5 минут на одного бенефициара.
 
 #### Виртуальные счета
 - `create_virtual_account` — создание
@@ -177,5 +180,4 @@ cyclops-dashboard/
 
 ### Внутри Точки
 - 24/7, мгновенно
-
 

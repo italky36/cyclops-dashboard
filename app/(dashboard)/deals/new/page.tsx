@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
@@ -40,7 +40,7 @@ export default function NewDealPage() {
   const router = useRouter();
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
-  const cyclops = useCyclops({ layer });
+  const { listVirtualAccounts, listBanksSBP, getVirtualAccount, createDeal } = useCyclops({ layer });
 
   const [virtualAccounts, setVirtualAccounts] = useState<VirtualAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
@@ -52,50 +52,50 @@ export default function NewDealPage() {
   const [error, setError] = useState<string | null>(null);
   const [sbpBanks, setSbpBanks] = useState<Array<{ bank_sbp_id: string; name: string }>>([]);
 
+  const loadData = useCallback(async () => {
+    try {
+      const [accountsRes, banksRes] = await Promise.all([
+        listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
+        listBanksSBP(),
+      ]);
+
+      const accountIds = accountsRes.result?.virtual_accounts;
+      if (Array.isArray(accountIds) && accountIds.length > 0) {
+        const accountDetails = await Promise.all(
+          accountIds.map(async (accountId: string) => {
+            try {
+              const detailsRes = await getVirtualAccount(accountId);
+              const details = detailsRes.result?.virtual_account;
+              if (!details) return null;
+              return {
+                virtual_account_id: details.code || accountId,
+                beneficiary_id: details.beneficiary_id,
+                available_amount: typeof details.cash === 'number' ? details.cash : 0,
+                type: details.type || 'standard',
+              } as VirtualAccount;
+            } catch {
+              return null;
+            }
+          })
+        );
+        setVirtualAccounts(
+          (accountDetails.filter(Boolean) as VirtualAccount[]).filter((a) => a.available_amount > 0)
+        );
+      } else {
+        setVirtualAccounts([]);
+      }
+      if (Array.isArray(banksRes.result)) {
+        setSbpBanks(banksRes.result);
+      }
+    } catch (err) {
+      console.error('Failed to load data:', err);
+    }
+  }, [getVirtualAccount, listBanksSBP, listVirtualAccounts]);
+
   // Загрузка виртуальных счетов
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [accountsRes, banksRes] = await Promise.all([
-          cyclops.listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
-          cyclops.listBanksSBP(),
-        ]);
-
-        const accountIds = accountsRes.result?.virtual_accounts;
-        if (Array.isArray(accountIds) && accountIds.length > 0) {
-          const accountDetails = await Promise.all(
-            accountIds.map(async (accountId: string) => {
-              try {
-                const detailsRes = await cyclops.getVirtualAccount(accountId);
-                const details = detailsRes.result?.virtual_account;
-                if (!details) return null;
-                return {
-                  virtual_account_id: details.code || accountId,
-                  beneficiary_id: details.beneficiary_id,
-                  available_amount: typeof details.cash === 'number' ? details.cash : 0,
-                  type: details.type || 'standard',
-                } as VirtualAccount;
-              } catch {
-                return null;
-              }
-            })
-          );
-          setVirtualAccounts(
-            (accountDetails.filter(Boolean) as VirtualAccount[]).filter((a) => a.available_amount > 0)
-          );
-        } else {
-          setVirtualAccounts([]);
-        }
-        if (Array.isArray(banksRes.result)) {
-          setSbpBanks(banksRes.result);
-        }
-      } catch (err) {
-        console.error('Failed to load data:', err);
-      }
-    };
-
     loadData();
-  }, [layer]);
+  }, [loadData]);
 
   const addRecipient = () => {
     setRecipients([
@@ -180,7 +180,7 @@ export default function NewDealPage() {
         }),
       };
 
-      const response = await cyclops.createDeal(dealData);
+      const response = await createDeal(dealData);
 
       if (response.error) {
         throw new Error(response.error.message);

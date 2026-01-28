@@ -19,6 +19,7 @@ import {
   createLogEntry,
   logCyclopsRequest,
 } from '@/lib/cyclops-errors';
+import { createBeneficiarySchema, validateParams } from '@/lib/cyclops-validators';
 import type { Layer, GetBeneficiaryResult, ListBeneficiariesResult, JsonRpcResponse, CyclopsError } from '@/types/cyclops';
 import fs from 'fs/promises';
 import path from 'path';
@@ -114,6 +115,7 @@ export async function POST(request: NextRequest) {
     // Безопасность: проверяем разрешённые методы
     const allowedMethods = [
       // Бенефициары
+      'create_beneficiary',
       'create_beneficiary_ul',
       'create_beneficiary_ip',
       'create_beneficiary_fl',
@@ -171,12 +173,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let effectiveParams = params || {};
+    if (method === 'create_beneficiary') {
+      const validation = validateParams(createBeneficiarySchema, params || {});
+      if (!validation.success) {
+        return NextResponse.json(
+          { error: 'Validation error', details: validation.errors },
+          { status: 400 }
+        );
+      }
+      effectiveParams = validation.data;
+    }
+
     // Методы, которые инвалидируют кеш
     const cacheInvalidatingMethods: Record<string, string[]> = {
       'create_virtual_account': ['list_virtual_account'],
       'refund_virtual_account': ['get_virtual_account', 'list_virtual_transaction'],
       'transfer_between_virtual_accounts': ['get_virtual_account', 'list_virtual_transaction'],
       'transfer_between_virtual_accounts_v2': ['get_virtual_account', 'list_virtual_transaction'],
+      'create_beneficiary': ['list_beneficiary'],
       'create_beneficiary_ul': ['list_beneficiary'],
       'create_beneficiary_ip': ['list_beneficiary'],
       'create_beneficiary_fl': ['list_beneficiary'],
@@ -188,7 +203,7 @@ export async function POST(request: NextRequest) {
     const startTime = Date.now();
 
     // Проверяем кеш для rate-limited методов
-    const cacheKey = generateCacheKey(method, layer, params || {});
+    const cacheKey = generateCacheKey(method, layer, effectiveParams);
     let fromCache = false;
 
     if (shouldCacheMethod(method)) {
@@ -223,7 +238,7 @@ export async function POST(request: NextRequest) {
 
     // Получаем клиент и выполняем запрос
     const client = await getClient(layer);
-    const result = await client.call(method, params || {});
+    const result = await client.call(method, effectiveParams);
 
     // Логируем запрос
     const durationMs = Date.now() - startTime;
@@ -231,7 +246,7 @@ export async function POST(request: NextRequest) {
       requestId,
       method,
       layer,
-      params || {},
+      effectiveParams,
       !result.error,
       durationMs,
       result.error as CyclopsError | undefined
@@ -331,6 +346,7 @@ export async function GET() {
   return NextResponse.json({
     methods: {
       beneficiaries: [
+        'create_beneficiary',
         'create_beneficiary_ul',
         'create_beneficiary_ip',
         'create_beneficiary_fl',

@@ -169,6 +169,27 @@ export function getBeneficiariesLastSyncAt(): number | null {
   return row?.last_sync_at ?? null;
 }
 
+export function getBeneficiaryStatusCheck(beneficiaryId: string): number | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT last_checked_at FROM beneficiary_status_checks WHERE beneficiary_id = ?')
+    .get(beneficiaryId) as { last_checked_at?: number | null } | undefined;
+  return row?.last_checked_at ?? null;
+}
+
+export function setBeneficiaryStatusCheck(beneficiaryId: string, checkedAt: number = Date.now()): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO beneficiary_status_checks (beneficiary_id, last_checked_at)
+    VALUES (@beneficiary_id, @last_checked_at)
+    ON CONFLICT(beneficiary_id) DO UPDATE SET
+      last_checked_at = excluded.last_checked_at
+  `).run({
+    beneficiary_id: beneficiaryId,
+    last_checked_at: checkedAt,
+  });
+}
+
 export function mapCachedToApi(
   list: BeneficiaryListItem[],
   cached: CachedBeneficiary[]

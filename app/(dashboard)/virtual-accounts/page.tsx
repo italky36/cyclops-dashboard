@@ -36,7 +36,17 @@ type TabType = 'accounts' | 'transactions';
 export default function VirtualAccountsPage() {
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
-  const cyclops = useCyclops({ layer });
+  const {
+    listVirtualAccounts,
+    listBeneficiaries,
+    getVirtualAccount,
+    listVirtualTransactions,
+    createVirtualAccount,
+    transferBetweenVirtualAccounts,
+    transferBetweenVirtualAccountsV2,
+    getVirtualAccountsTransfer,
+    refundVirtualAccount,
+  } = useCyclops({ layer });
 
   const [accounts, setAccounts] = useState<VirtualAccount[]>([]);
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
@@ -102,7 +112,7 @@ export default function VirtualAccountsPage() {
     }, 5000);
   }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -115,8 +125,8 @@ export default function VirtualAccountsPage() {
       }
 
       const [accountsRes, beneficiariesRes] = await Promise.all([
-        cyclops.listVirtualAccounts({ filters: Object.keys(filters).length > 0 ? filters : undefined }),
-        cyclops.listBeneficiaries({ is_active: true }),
+        listVirtualAccounts({ filters: Object.keys(filters).length > 0 ? filters : undefined }),
+        listBeneficiaries({ is_active: true }),
       ]);
 
       // Проверяем, были ли данные из кеша
@@ -127,7 +137,7 @@ export default function VirtualAccountsPage() {
         const accountDetails = await Promise.all(
           accountIds.map(async (accountId: string) => {
             try {
-              const detailsRes = await cyclops.getVirtualAccount(accountId);
+              const detailsRes = await getVirtualAccount(accountId);
               const details = detailsRes.result?.virtual_account;
               if (!details) return null;
               return {
@@ -167,9 +177,9 @@ export default function VirtualAccountsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filterInn, filterLegalType, filterIsActive, getVirtualAccount, listBeneficiaries, listVirtualAccounts, showToast]);
 
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     if (!selectedAccountForTx) return;
 
     setTxLoading(true);
@@ -181,7 +191,7 @@ export default function VirtualAccountsPage() {
       if (txDateFrom) filters.created_date_from = txDateFrom;
       if (txDateTo) filters.created_date_to = txDateTo;
 
-      const res = await cyclops.listVirtualTransactions({ filters });
+      const res = await listVirtualTransactions({ filters });
       if (res.result) {
         setTransactions(res.result.virtual_transactions || []);
         setTxTotals({
@@ -196,17 +206,17 @@ export default function VirtualAccountsPage() {
     } finally {
       setTxLoading(false);
     }
-  };
+  }, [listVirtualTransactions, selectedAccountForTx, showToast, txDateFrom, txDateTo, txIncludeBlock]);
 
   useEffect(() => {
     loadData();
-  }, [layer]);
+  }, [loadData]);
 
   useEffect(() => {
     if (activeTab === 'transactions' && selectedAccountForTx) {
       loadTransactions();
     }
-  }, [activeTab, selectedAccountForTx, txDateFrom, txDateTo, txIncludeBlock]);
+  }, [activeTab, loadTransactions, selectedAccountForTx]);
 
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {
@@ -242,7 +252,7 @@ export default function VirtualAccountsPage() {
 
     setIsCreating(true);
     try {
-      await cyclops.createVirtualAccount({
+      await createVirtualAccount({
         beneficiary_id: selectedBeneficiary,
         type: accountType,
       });
@@ -272,7 +282,7 @@ export default function VirtualAccountsPage() {
     setTransferStatus(null);
     try {
       if (transferVersion === 'v2') {
-        const result = await cyclops.transferBetweenVirtualAccountsV2({
+        const result = await transferBetweenVirtualAccountsV2({
           from_virtual_account: fromAccount,
           to_virtual_account: toAccount,
           amount: parseFloat(transferAmount),
@@ -282,7 +292,7 @@ export default function VirtualAccountsPage() {
         setTransferStatus(result.result?.status || 'UNKNOWN');
         showToast('info', `Перевод создан. Статус: ${result.result?.status}`);
       } else {
-        await cyclops.transferBetweenVirtualAccounts({
+        await transferBetweenVirtualAccounts({
           from_virtual_account: fromAccount,
           to_virtual_account: toAccount,
           amount: parseFloat(transferAmount),
@@ -317,7 +327,7 @@ export default function VirtualAccountsPage() {
   const checkTransferStatus = async () => {
     if (!transferId) return;
     try {
-      const result = await cyclops.getVirtualAccountsTransfer(transferId);
+      const result = await getVirtualAccountsTransfer(transferId);
       setTransferStatus(result.result?.status || 'UNKNOWN');
       showToast('info', `Статус перевода: ${result.result?.status}`);
     } catch (err) {
@@ -352,7 +362,7 @@ export default function VirtualAccountsPage() {
 
     setIsRefunding(true);
     try {
-      const result = await cyclops.refundVirtualAccount({
+      const result = await refundVirtualAccount({
         virtual_account: refundAccount,
         recipient: {
           amount: parseFloat(refundAmount),
