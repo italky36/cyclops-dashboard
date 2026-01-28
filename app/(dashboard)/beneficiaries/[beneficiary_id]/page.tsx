@@ -756,20 +756,7 @@ export default function BeneficiaryDetailPage() {
           </div>
 
           <div className="card update-card">
-            <div className="card-header">
-              <h2 className="card-title">Обновить данные</h2>
-              <div className="card-actions">
-                {!isEditing ? (
-                  <button className="btn btn-secondary btn-sm" onClick={handleEditStart}>
-                    Редактировать
-                  </button>
-                ) : (
-                  <button className="btn btn-ghost btn-sm" onClick={handleEditCancel}>
-                    Отмена
-                  </button>
-                )}
-              </div>
-            </div>
+            <h2 className="card-title">Обновить данные</h2>
 
             {beneficiary.type === 'ul' && (
               <div className="form-fields">
