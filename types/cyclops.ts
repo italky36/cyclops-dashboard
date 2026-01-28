@@ -424,7 +424,12 @@ export const CYCLOPS_ERROR_CODES = {
   BENEFICIARY_NOT_FOUND: 4409,
   BENEFICIARY_NOT_ACTIVE: 4410,
   VIRTUAL_ACCOUNT_NOT_FOUND: 4411,
+  PAYMENT_NOT_FOUND: 4412,
+  PAYMENT_AMOUNT_MISMATCH: 4413,
+  PAYMENT_ALREADY_IDENTIFIED: 4414,
   INSUFFICIENT_FUNDS: 4415,
+  REFUND_ERROR: 4422,
+  COMPLIANCE_ERROR: 4436,
   DOCUMENT_NOT_FOUND: 4406,
   INCORRECT_VO_CODES: 4451,
   RESTRICTIONS_IMPOSED: 4558,
@@ -439,10 +444,15 @@ export const CYCLOPS_ERROR_MESSAGES: Record<number, string> = {
   [CYCLOPS_ERROR_CODES.BENEFICIARY_NOT_FOUND]: 'Бенефициар не найден',
   [CYCLOPS_ERROR_CODES.BENEFICIARY_NOT_ACTIVE]: 'Бенефициар не активен',
   [CYCLOPS_ERROR_CODES.VIRTUAL_ACCOUNT_NOT_FOUND]: 'Виртуальный счёт не найден',
+  [CYCLOPS_ERROR_CODES.PAYMENT_NOT_FOUND]: 'Платёж не найден',
+  [CYCLOPS_ERROR_CODES.PAYMENT_AMOUNT_MISMATCH]: 'Суммы не совпадают',
+  [CYCLOPS_ERROR_CODES.PAYMENT_ALREADY_IDENTIFIED]: 'Платёж уже идентифицирован',
   [CYCLOPS_ERROR_CODES.INSUFFICIENT_FUNDS]: 'Недостаточно средств на виртуальном счёте',
+  [CYCLOPS_ERROR_CODES.REFUND_ERROR]: 'Ошибка возврата платежа',
+  [CYCLOPS_ERROR_CODES.COMPLIANCE_ERROR]: 'Ошибка комплаенс-проверки',
   [CYCLOPS_ERROR_CODES.DOCUMENT_NOT_FOUND]: 'Документ не найден',
   [CYCLOPS_ERROR_CODES.INCORRECT_VO_CODES]: 'Некорректные или отсутствующие коды VO для платежа нерезиденту',
-  [CYCLOPS_ERROR_CODES.RESTRICTIONS_IMPOSED]: 'Наложены ограничения (исполнительное производство)',
+  [CYCLOPS_ERROR_CODES.RESTRICTIONS_IMPOSED]: 'Ограничения по ИП/исполнительному производству',
   [CYCLOPS_ERROR_CODES.IDEMPOTENT_REQUEST_IN_PROCESS]: 'Запрос с таким ext_key уже обрабатывается',
   [CYCLOPS_ERROR_CODES.TRANSFER_NOT_FOUND]: 'Перевод между номинальными счетами не найден',
 };
@@ -549,22 +559,29 @@ export interface Deal {
 }
 
 // Payment Types
-export type PaymentType = 
+export type PaymentType =
   | 'incoming'
   | 'incoming_sbp'
+  | 'incoming_unrecognized'
+  | 'incoming_by_sbp_v2'
+  | 'unrecognized_refund'
+  | 'unrecognized_refund_sbp'
   | 'payment_contract'
+  | 'payment_contract_by_sbp_v2'
+  | 'payment_contract_to_card'
   | 'commission'
   | 'ndfl'
   | 'refund'
   | 'card';
 
-export type PaymentStatus = 
+export type PaymentStatus =
   | 'new'
   | 'in_process'
   | 'executed'
   | 'rejected'
   | 'returned';
 
+// Basic Payment interface (for backward compatibility)
 export interface Payment {
   payment_id: string;
   type: PaymentType;
@@ -573,6 +590,141 @@ export interface Payment {
   identified: boolean;
   created_at: string;
   purpose?: string;
+}
+
+// Extended Payment interface for v2 API
+export interface PaymentDetail {
+  payment_id: string;
+  type: PaymentType;
+  status: PaymentStatus;
+  amount: number;
+  incoming: boolean;
+  identify: boolean;
+  created_at: string;
+  updated_at?: string;
+
+  // Document fields
+  purpose?: string;
+  document_number?: string;
+  document_date?: string;
+
+  // Payer fields
+  payer_bank_code?: string;
+  payer_account?: string;
+  payer_name?: string;
+  payer_tax_code?: string;
+  payer_tax_reason_code?: string;
+  payer_bank_name?: string;
+  payer_correspondent_account?: string;
+
+  // Recipient fields
+  recipient_bank_code?: string;
+  recipient_account?: string;
+  recipient_name?: string;
+  recipient_tax_code?: string;
+  recipient_tax_reason_code?: string;
+  recipient_bank_name?: string;
+  recipient_correspondent_account?: string;
+
+  // SBP specific fields
+  cancel_reason_description?: string;
+
+  // Card specific fields
+  deal_id?: string;
+
+  // Virtual accounts (after identification)
+  virtual_accounts?: string[];
+
+  // Allow additional unknown fields for fallback rendering
+  [key: string]: unknown;
+}
+
+// Filters for list_payments_v2
+export interface PaymentFilters {
+  account?: string;
+  bic?: string;
+  status?: PaymentStatus | PaymentStatus[];
+  type?: PaymentType | PaymentType[];
+  create_date?: string;
+  update_date?: string;
+  updated_at_from?: string;
+  updated_at_to?: string;
+  incoming?: boolean;
+  identify?: boolean;
+  c2b_qr_code_id?: string;
+}
+
+// Parameters for list_payments_v2
+export interface ListPaymentsV2Params {
+  page?: number;
+  per_page?: number;
+  filters?: PaymentFilters;
+}
+
+// Result of list_payments_v2
+export interface ListPaymentsV2Result {
+  payments: PaymentDetail[];
+  meta?: {
+    total?: number;
+    page?: {
+      current_page?: number;
+      per_page?: number;
+    };
+  };
+}
+
+// Result of get_payment
+export interface GetPaymentResult {
+  payment: PaymentDetail;
+}
+
+// Owner for identification
+export interface PaymentOwner {
+  virtual_account: string;
+  amount: number;
+}
+
+// Parameters for identification_payment
+export interface IdentifyPaymentParams {
+  payment_id: string;
+  is_returned_payment?: boolean;
+  owners: PaymentOwner[];
+}
+
+// Result of identification_payment
+export interface IdentifyPaymentResult {
+  virtual_accounts: Array<{
+    code: string;
+    cash: number;
+  }>;
+}
+
+// Unified API response format for payments
+export interface PaymentApiResponse<T> {
+  ok: boolean;
+  data?: T;
+  error?: {
+    code?: number | string;
+    title: string;
+    message: string;
+    hint?: string;
+    actions?: Array<{
+      label: string;
+      kind: 'retry' | 'link' | 'copy' | 'noop' | 'refresh';
+      href?: string;
+      payload?: unknown;
+    }>;
+  };
+  meta?: {
+    page?: number;
+    total?: number;
+    per_page?: number;
+    current_page?: number;
+  };
+  cached?: boolean;
+  cacheAgeSeconds?: number;
+  nextAllowedAt?: string;
+  requestId?: string;
 }
 
 // Auto-payment Rules

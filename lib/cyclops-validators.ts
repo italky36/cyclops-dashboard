@@ -233,6 +233,136 @@ export const getVirtualAccountsTransferSchema = z.object({
   transfer_id: uuidSchema,
 });
 
+// ==================== Схемы для платежей ====================
+
+/**
+ * Enum для статуса платежа
+ */
+export const paymentStatusEnum = z.enum([
+  'new',
+  'in_process',
+  'executed',
+  'rejected',
+  'returned',
+]);
+
+/**
+ * Enum для типа платежа
+ */
+export const paymentTypeEnum = z.enum([
+  'incoming',
+  'incoming_sbp',
+  'incoming_unrecognized',
+  'incoming_by_sbp_v2',
+  'unrecognized_refund',
+  'unrecognized_refund_sbp',
+  'payment_contract',
+  'payment_contract_by_sbp_v2',
+  'payment_contract_to_card',
+  'commission',
+  'ndfl',
+  'refund',
+  'card',
+]);
+
+/**
+ * Datetime с timezone в формате YYYY-MM-DD HH:MM:SS+TZ
+ */
+export const datetimeWithTzSchema = z.string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}$/,
+    'Дата должна быть в формате YYYY-MM-DD HH:MM:SS+TZ (например, 2024-01-15 14:30:00+03)'
+  );
+
+/**
+ * Схема фильтров для list_payments_v2
+ */
+export const paymentFiltersSchema = z.object({
+  account: accountNumberSchema.optional(),
+  bic: bankCodeSchema.optional(),
+  status: z.union([
+    paymentStatusEnum,
+    z.array(paymentStatusEnum),
+  ]).optional(),
+  type: z.union([
+    paymentTypeEnum,
+    z.array(paymentTypeEnum),
+  ]).optional(),
+  create_date: dateSchema.optional(),
+  update_date: dateSchema.optional(),
+  updated_at_from: datetimeWithTzSchema.optional(),
+  updated_at_to: datetimeWithTzSchema.optional(),
+  incoming: z.boolean().optional(),
+  identify: z.boolean().optional(),
+  c2b_qr_code_id: uuidSchema.optional(),
+}).strict();
+
+/**
+ * Схема для list_payments_v2
+ */
+export const listPaymentsV2Schema = z.object({
+  page: z.number().int().positive().default(1),
+  per_page: z.number().int().min(1).max(1000).default(100),
+  filters: paymentFiltersSchema.optional(),
+});
+
+/**
+ * Схема для get_payment
+ */
+export const getPaymentSchema = z.object({
+  payment_id: uuidSchema,
+});
+
+/**
+ * Схема owner для идентификации платежа
+ */
+export const paymentOwnerSchema = z.object({
+  virtual_account: uuidSchema,
+  amount: amountSchema,
+});
+
+/**
+ * Схема для identification_payment
+ */
+export const identifyPaymentSchema = z.object({
+  payment_id: uuidSchema,
+  is_returned_payment: z.boolean().default(false),
+  owners: z.array(paymentOwnerSchema).min(1, 'Требуется минимум один owner'),
+});
+
+/**
+ * Валидация суммы идентификации
+ * Проверяет, что сумма всех owners равна сумме платежа
+ */
+export function validateIdentifyAmounts(
+  paymentAmount: number,
+  owners: Array<{ amount: number }>
+): { valid: boolean; error?: string } {
+  const total = owners.reduce((sum, o) => sum + o.amount, 0);
+  const rounded = Math.round(total * 100) / 100;
+  const paymentRounded = Math.round(paymentAmount * 100) / 100;
+
+  if (Math.abs(rounded - paymentRounded) > 0.01) {
+    return {
+      valid: false,
+      error: `Сумма owners (${rounded.toFixed(2)} руб.) не совпадает с суммой платежа (${paymentRounded.toFixed(2)} руб.)`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Проверяет, можно ли идентифицировать платёж данного типа
+ */
+export function canIdentifyPaymentType(type: string): boolean {
+  const unidentifiableTypes = [
+    'incoming_unrecognized',
+    'unrecognized_refund',
+    'unrecognized_refund_sbp',
+  ];
+  return !unidentifiableTypes.includes(type);
+}
+
 // ==================== Типы из схем ====================
 
 export type CreateVirtualAccountParams = z.infer<typeof createVirtualAccountSchema>;
@@ -243,6 +373,13 @@ export type RefundVirtualAccountParams = z.infer<typeof refundVirtualAccountSche
 export type TransferBetweenAccountsParams = z.infer<typeof transferBetweenAccountsSchema>;
 export type TransferBetweenAccountsV2Params = z.infer<typeof transferBetweenAccountsV2Schema>;
 export type GetVirtualAccountsTransferParams = z.infer<typeof getVirtualAccountsTransferSchema>;
+
+// Payment types
+export type PaymentFiltersParams = z.infer<typeof paymentFiltersSchema>;
+export type ListPaymentsV2SchemaParams = z.infer<typeof listPaymentsV2Schema>;
+export type GetPaymentParams = z.infer<typeof getPaymentSchema>;
+export type IdentifyPaymentSchemaParams = z.infer<typeof identifyPaymentSchema>;
+export type PaymentOwnerParams = z.infer<typeof paymentOwnerSchema>;
 
 // ==================== Утилиты валидации ====================
 

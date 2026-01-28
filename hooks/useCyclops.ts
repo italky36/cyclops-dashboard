@@ -30,6 +30,13 @@ import type {
   AddBeneficiaryDocumentsParams,
   AddBeneficiaryDocumentsResult,
   UpdateBeneficiaryResult,
+  // Payment types
+  ListPaymentsV2Params,
+  ListPaymentsV2Result,
+  GetPaymentResult,
+  IdentifyPaymentParams,
+  IdentifyPaymentResult,
+  PaymentFilters,
 } from '@/types/cyclops';
 
 interface UseCyclopsOptions {
@@ -120,6 +127,8 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
         'list_virtual_account',
         'get_virtual_account',
         'list_virtual_transaction',
+        'list_payments_v2',
+        'get_payment',
       ]);
       const cacheKey = cacheableMethods.has(method)
         ? `${method}:${layer}:${JSON.stringify(params || {})}`
@@ -180,7 +189,7 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
       setState({ loading: false, error: message, errorInfo, cacheInfo: null });
 
       // Удаляем из кеша при ошибке
-      const cacheableMethods = ['list_beneficiary', 'get_beneficiary', 'list_virtual_account', 'get_virtual_account', 'list_virtual_transaction'];
+      const cacheableMethods = ['list_beneficiary', 'get_beneficiary', 'list_virtual_account', 'get_virtual_account', 'list_virtual_transaction', 'list_payments_v2', 'get_payment'];
       if (cacheableMethods.includes(method)) {
         const cacheKey = `${method}:${layer}:${JSON.stringify(params || {})}`;
         requestCache.delete(cacheKey);
@@ -516,22 +525,36 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   // ==================== ПЛАТЕЖИ ====================
 
   const listPayments = useCallback(
-    (filters?: { type?: string; identified?: boolean }) =>
-      call('list_payments_v2', filters),
+    async (params?: ListPaymentsV2Params) => {
+      const requestParams: Record<string, unknown> = {
+        page: params?.page ?? 1,
+        per_page: params?.per_page ?? 100,
+      };
+      if (params?.filters && Object.keys(params.filters).length > 0) {
+        requestParams.filters = params.filters;
+      }
+      return call<ListPaymentsV2Result>('list_payments_v2', requestParams);
+    },
     [call]
   );
 
   const getPayment = useCallback(
-    (payment_id: string) => call('get_payment', { payment_id }),
+    (payment_id: string) => call<GetPaymentResult>('get_payment', { payment_id }),
     [call]
   );
 
   const identifyPayment = useCallback(
-    (params: {
-      payment_id: string;
-      owners: Array<{ virtual_account: string; amount: number }>;
-    }) => call('identification_payment', params),
-    [call]
+    async (params: IdentifyPaymentParams) => {
+      const result = await call<IdentifyPaymentResult>(
+        'identification_payment',
+        params as unknown as Record<string, unknown>
+      );
+      // Инвалидируем кэш платежей после успешной идентификации
+      clearCacheByPrefix(`list_payments_v2:${layer}:`);
+      clearCacheByPrefix(`get_payment:${layer}:`);
+      return result;
+    },
+    [call, layer]
   );
 
   // ==================== СБП ====================

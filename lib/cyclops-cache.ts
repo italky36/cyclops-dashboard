@@ -17,6 +17,8 @@ const RATE_LIMITED_METHODS = new Set([
   'list_virtual_transaction',
   'list_beneficiary',
   'get_beneficiary',
+  'list_payments_v2',
+  'get_payment',
 ]);
 
 interface CacheEntry {
@@ -162,6 +164,8 @@ export function getCacheInfo(cacheKey: string): {
   cachedAt?: string;
   expiresAt?: string;
   remainingMs?: number;
+  nextAllowedAt?: string;
+  cacheAgeSeconds?: number;
 } {
   const entry = cache.get(cacheKey);
 
@@ -179,6 +183,8 @@ export function getCacheInfo(cacheKey: string): {
     cachedAt: new Date(entry.cachedAt).toISOString(),
     expiresAt: new Date(entry.expiresAt).toISOString(),
     remainingMs: entry.expiresAt - now,
+    nextAllowedAt: new Date(entry.expiresAt).toISOString(),
+    cacheAgeSeconds: Math.floor((now - entry.cachedAt) / 1000),
   };
 }
 

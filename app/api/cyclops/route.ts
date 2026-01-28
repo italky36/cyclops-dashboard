@@ -189,6 +189,9 @@ export async function POST(request: NextRequest) {
       'update_beneficiary_fl': ['list_beneficiary', 'get_beneficiary'],
       'activate_beneficiary': ['list_beneficiary', 'get_beneficiary'],
       'deactivate_beneficiary': ['list_beneficiary', 'get_beneficiary'],
+      // Payment methods
+      'identification_payment': ['list_payments_v2', 'get_payment'],
+      'refund_payment': ['list_payments_v2', 'get_payment'],
     };
 
     const requestId = uuidv4();

@@ -1,0 +1,101 @@
+Cyclops Dashboard — обзор проекта
+
+Дата описания: 2026-01-28
+Путь проекта: C:\Users\admin\Documents\VSCOde\cyclops-dashboard
+
+1) Стек технологий
+- Next.js 14 (App Router) + React 18
+- TypeScript
+- Node.js >= 18.17
+- Next.js API Routes (serverless/edge-style handlers)
+- SQLite через better-sqlite3 (локальная БД)
+- Аутентификация: JWT (jose) + cookie-сессии
+- Хэширование паролей: bcryptjs
+- HTTP клиент: axios (Vendista API)
+- Валидация данных: zod
+- Состояние UI: Zustand
+- Утилиты: uuid, встроенный crypto (RSA подпись, AES-256-GCM)
+- Тесты: запуск через tsx (tests/*.test.ts)
+- Стили: globals.css + CSS modules (например, /login)
+
+2) Структура проекта (ключевые папки)
+- app/
+  - (auth)/login/            UI авторизации
+  - (dashboard)/             основные страницы дашборда
+    - beneficiaries/         бенефициары (список, создание, детальная)
+    - virtual-accounts/      виртуальные счета
+    - deals/                 сделки
+    - payments/              платежи
+    - machines/              торговые автоматы (Vendista)
+    - payouts/               выплаты бенефициарам
+    - settings/              настройки ключей/слоев
+    - users/                 пользователи
+  - api/                     серверные маршруты
+    - cyclops/               прокси к Cyclops API + кэш + лог ошибок
+    - keys/                  управление RSA ключами (шифрование, тест)
+    - auth/                  login/logout/setup/status
+    - vendista/              синхронизация автоматов и транзакций
+    - assignments/           привязка автоматов к бенефициарам
+    - payouts/               расчет и выполнение выплат
+    - settings/, users/      управление настройками/пользователями
+- components/                UI и layout компоненты (Sidebar, LayerSwitcher)
+- hooks/                     useCyclops, useMediaQuery
+- lib/                       бизнес-логика, клиенты API, валидации, кэш, БД
+- types/                     типы Cyclops
+- data/                      SQLite база (cyclops.db)
+- tests/                     unit-тесты валидаторов, кэша и ошибок
+- .keys/                     зашифрованные ключи (pre/prod)
+
+3) Функционал приложения (по коду)
+- Авторизация и безопасность
+  - Создание/логин пользователя (SQLite)
+  - JWT-сессия в httpOnly cookie
+  - Middleware: защита всех страниц и API (кроме /login и /api/auth)
+  - Ограничение попыток входа (rate-limit на логин)
+- Интеграция с Cyclops (Точка Банк)
+  - JSON-RPC вызовы с RSA подписью запроса
+  - Переключение слоев PRE/PROD
+  - Белый список разрешенных методов на сервере
+  - Кэширование rate-limited методов (TTL ~5 минут)
+  - Нормализованные ошибки Cyclops (дружественные сообщения)
+- Управление ключами
+  - Хранение ключей только на сервере
+  - Шифрование AES-256-GCM + PBKDF2, мастер-пароль из ENV
+  - Генерация RSA ключей, валидация ключей и сертификатов
+  - Тест подключения (echo) к Cyclops
+- Бенефициары
+  - Создание ЮЛ/ИП/ФЛ, список, активация/деактивация
+  - Кэш деталей в SQLite (beneficiaries_cache)
+  - Отслеживание статуса проверки в мастер-системе
+- Виртуальные счета
+  - Создание, список, детали, транзакции
+  - Переводы между счетами (v1/v2), вывод средств
+- Сделки
+  - Создание, обновление, список, исполнение, отмена
+- Платежи
+  - Список, детализация, идентификация, возвраты
+- Документы и СБП (API-уровень)
+  - Методы upload/get/list документов и генерация QR СБП доступны в API-слое
+  - UI-страницы под эти сценарии пока не выделены отдельным модулем
+- Vendista (торговые автоматы)
+  - Интеграция с Vendista API (синхронизация автоматов, транзакции)
+  - Привязка автоматов к бенефициарам
+  - Расчет выплат по продажам, история выплат и детали
+  - Настройка расписания автоматических выплат
+- Аудит
+  - Локальный audit_log: фиксация действий (привязки, выплаты, синхронизации)
+
+4) Хранение данных
+- SQLite (data/cyclops.db)
+  - users, login_attempts
+  - beneficiaries_cache, beneficiary_status_checks
+  - vending_machines, machine_assignments
+  - beneficiary_payouts, payout_details, payout_schedule
+  - audit_log
+
+5) Тесты (быстрый запуск)
+- npm run test
+  - cyclops-validators.test.ts
+  - cyclops-errors.test.ts
+  - cyclops-cache.test.ts
+  - beneficiary-create.test.ts

@@ -53,7 +53,7 @@ export default function DashboardPage() {
         listBeneficiaries({ is_active: true }),
         listVirtualAccounts(),
         listDeals(),
-        listPayments({ identified: false }),
+        listPayments({ filters: { incoming: true, identify: false } }),
       ]);
 
       // Подсчёт статистики из ответов

@@ -170,6 +170,29 @@ function ensureSchema(database: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_audit_log_action
       ON audit_log (action);
+
+    -- ============ TENDER-HELPERS (PRE ONLY) ============
+
+    CREATE TABLE IF NOT EXISTS tender_helpers_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      base_url TEXT NOT NULL,
+      recipient_account TEXT NOT NULL,
+      recipient_bank_code TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tender_helpers_payers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      payer_bank_code TEXT NOT NULL,
+      payer_account TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tender_helpers_payers_default
+      ON tender_helpers_payers (is_default)
+      WHERE is_default = 1;
   `);
 }
 
