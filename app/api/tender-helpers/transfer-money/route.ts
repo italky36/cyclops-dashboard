@@ -9,6 +9,7 @@ import {
 import {
   getTenderHelpersConfig,
   getDefaultTenderHelpersPayer,
+  addTenderHelpersPayment,
 } from '@/lib/tender-helpers';
 
 const transferSchema = z.object({
@@ -156,6 +157,21 @@ export async function POST(request: NextRequest) {
     }
 
     const result = payloadJson?.result || payloadJson;
+
+    try {
+      addTenderHelpersPayment({
+        service_pay_key: result?.service_pay_key ?? null,
+        status: result?.status ?? null,
+        amount: parsed.data.amount ?? null,
+        purpose: parsed.data.purpose ?? null,
+        recipient_account,
+        recipient_bank_code,
+        payer_account,
+        payer_bank_code,
+      });
+    } catch (dbError) {
+      console.error('[Tender-Helpers] failed to save payment history', dbError);
+    }
 
     return NextResponse.json(
       createSuccessResponse({

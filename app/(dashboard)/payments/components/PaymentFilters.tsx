@@ -1,7 +1,6 @@
 'use client';
-
 import { useState } from 'react';
-import type { PaymentFilters as Filters, PaymentStatus, PaymentType } from '@/types/cyclops';
+import type { PaymentFilters as Filters } from '@/types/cyclops';
 
 interface PaymentFiltersProps {
   filters: Filters;
@@ -10,42 +9,6 @@ interface PaymentFiltersProps {
   isLoading?: boolean;
 }
 
-const STATUS_OPTIONS: Array<{ value: PaymentStatus; label: string }> = [
-  { value: 'new', label: 'Новый' },
-  { value: 'in_process', label: 'В обработке' },
-  { value: 'executed', label: 'Исполнен' },
-  { value: 'rejected', label: 'Отклонён' },
-  { value: 'returned', label: 'Возвращён' },
-];
-
-const TYPE_OPTIONS: Array<{ value: PaymentType; label: string }> = [
-  { value: 'incoming', label: 'Входящий' },
-  { value: 'incoming_sbp', label: 'Входящий СБП' },
-  { value: 'incoming_by_sbp_v2', label: 'Входящий СБП v2' },
-  { value: 'payment_contract', label: 'По реквизитам' },
-  { value: 'payment_contract_by_sbp_v2', label: 'СБП v2' },
-  { value: 'payment_contract_to_card', label: 'На карту' },
-  { value: 'commission', label: 'Комиссия' },
-  { value: 'ndfl', label: 'НДФЛ' },
-  { value: 'refund', label: 'Возврат' },
-  { value: 'card', label: 'Карта' },
-];
-
-interface FilterPreset {
-  label: string;
-  filters: Filters;
-}
-
-const PRESETS: FilterPreset[] = [
-  {
-    label: 'Неидентифицированные',
-    filters: { incoming: true, identify: false },
-  },
-  {
-    label: 'Все входящие',
-    filters: { incoming: true },
-  },
-];
 
 export function PaymentFilters({
   filters,
@@ -65,72 +28,33 @@ export function PaymentFilters({
     onChange(newFilters);
   };
 
-  const applyPreset = (preset: FilterPreset) => {
-    onChange(preset.filters);
-  };
-
-  const hasActiveFilters = Object.keys(filters).length > 0;
-
   return (
     <div className="filters-container">
-      {/* Presets */}
       <div className="presets">
-        {PRESETS.map((preset) => (
-          <button
-            key={preset.label}
-            className={`preset-btn ${
-              JSON.stringify(filters) === JSON.stringify(preset.filters) ? 'active' : ''
-            }`}
-            onClick={() => applyPreset(preset)}
-            disabled={isLoading}
-          >
-            {preset.label}
-          </button>
-        ))}
-        {hasActiveFilters && (
-          <button className="preset-btn reset" onClick={onReset} disabled={isLoading}>
-            Сбросить
-          </button>
-        )}
+        <button className="preset-btn reset" onClick={onReset} disabled={isLoading}>
+          Сбросить все фильтры
+        </button>
       </div>
 
-      {/* Quick filters */}
       <div className="quick-filters">
         <div className="filter-group">
-          <label className="filter-label">Направление</label>
+          <label className="filter-label">Входящие</label>
           <select
             className="filter-select"
-            value={filters.incoming === true ? 'true' : filters.incoming === false ? 'false' : ''}
+            value={filters.incoming === true ? 'true' : filters.incoming === false ? 'false' : 'all'}
             onChange={(e) => {
               const val = e.target.value;
-              updateFilter('incoming', val === '' ? undefined : val === 'true');
-              // Reset identify filter if not incoming
-              if (val !== 'true') {
-                updateFilter('identify', undefined);
+              if (val === 'all') {
+                updateFilter('incoming', undefined);
+                return;
               }
+              updateFilter('incoming', val === 'true');
             }}
             disabled={isLoading}
           >
-            <option value="">Все</option>
+            <option value="all">Все</option>
             <option value="true">Входящие</option>
-            <option value="false">Исходящие</option>
-          </select>
-        </div>
-
-        <div className="filter-group">
-          <label className="filter-label">Идентификация</label>
-          <select
-            className="filter-select"
-            value={filters.identify === false ? 'false' : filters.identify === true ? 'true' : ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              updateFilter('identify', val === '' ? undefined : val === 'true');
-            }}
-            disabled={isLoading || filters.incoming !== true}
-          >
-            <option value="">Все</option>
-            <option value="false">Неидентифицированные</option>
-            <option value="true">Идентифицированные</option>
+            <option value="false">Нет</option>
           </select>
         </div>
 
@@ -154,7 +78,6 @@ export function PaymentFilters({
         </button>
       </div>
 
-      {/* Expanded filters */}
       {isExpanded && (
         <div className="expanded-filters">
           <div className="filters-grid">
@@ -185,40 +108,6 @@ export function PaymentFilters({
             </div>
 
             <div className="filter-group">
-              <label className="filter-label">Статус</label>
-              <select
-                className="filter-select"
-                value={(filters.status as string) || ''}
-                onChange={(e) => updateFilter('status', e.target.value as PaymentStatus || undefined)}
-                disabled={isLoading}
-              >
-                <option value="">Все</option>
-                {STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="filter-group">
-              <label className="filter-label">Тип</label>
-              <select
-                className="filter-select"
-                value={(filters.type as string) || ''}
-                onChange={(e) => updateFilter('type', e.target.value as PaymentType || undefined)}
-                disabled={isLoading}
-              >
-                <option value="">Все</option>
-                {TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="filter-group">
               <label className="filter-label">Дата создания</label>
               <input
                 type="date"
@@ -238,10 +127,13 @@ export function PaymentFilters({
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val) {
-                    // Convert to format: YYYY-MM-DD HH:MM:SS+TZ
                     const date = new Date(val);
                     const offset = -date.getTimezoneOffset() / 60;
-                    const formatted = val.replace('T', ' ') + ':00' + (offset >= 0 ? '+' : '') + String(offset).padStart(2, '0');
+                    const formatted =
+                      val.replace('T', ' ') +
+                      ':00' +
+                      (offset >= 0 ? '+' : '') +
+                      String(offset).padStart(2, '0');
                     updateFilter('updated_at_from', formatted);
                   } else {
                     updateFilter('updated_at_from', undefined);
@@ -262,7 +154,11 @@ export function PaymentFilters({
                   if (val) {
                     const date = new Date(val);
                     const offset = -date.getTimezoneOffset() / 60;
-                    const formatted = val.replace('T', ' ') + ':00' + (offset >= 0 ? '+' : '') + String(offset).padStart(2, '0');
+                    const formatted =
+                      val.replace('T', ' ') +
+                      ':00' +
+                      (offset >= 0 ? '+' : '') +
+                      String(offset).padStart(2, '0');
                     updateFilter('updated_at_to', formatted);
                   } else {
                     updateFilter('updated_at_to', undefined);
@@ -303,19 +199,16 @@ export function PaymentFilters({
           border-color: var(--text-secondary);
         }
 
-        .preset-btn.active {
-          background: var(--color-primary);
-          border-color: var(--color-primary);
-          color: white;
-        }
-
         .preset-btn.reset {
           color: var(--color-error);
         }
 
         .preset-btn:disabled {
-          opacity: 0.6;
+          opacity: 1;
           cursor: not-allowed;
+          background: var(--bg-secondary);
+          border-color: var(--border-color);
+          color: var(--text-secondary);
         }
 
         .quick-filters {

@@ -3,8 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
-import { useCyclops } from '@/hooks/useCyclops';
-import type { PaymentDetail } from '@/types/cyclops';
+interface TenderHelpersHistoryEntry {
+  id: number;
+  service_pay_key: string | null;
+  status: string | null;
+  amount: number | null;
+  purpose: string | null;
+  recipient_account: string | null;
+  recipient_bank_code: string | null;
+  payer_account: string | null;
+  payer_bank_code: string | null;
+  created_at: string;
+}
 
 interface TenderHelpersPayer {
   id: string;
@@ -89,7 +99,6 @@ const formatMoney = (amount: number | null | undefined) => {
 
 export default function TenderHelpersPage() {
   const layer = useAppStore((s) => s.layer);
-  const { listPayments } = useCyclops({ layer });
   const [activeTab, setActiveTab] = useState<'config' | 'transfer'>('config');
 
   const [config, setConfig] = useState<TenderHelpersConfigData>({
@@ -117,7 +126,7 @@ export default function TenderHelpersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferResult, setTransferResult] = useState<{ status: string | null; service_pay_key: string | null } | null>(null);
-  const [history, setHistory] = useState<PaymentDetail[]>([]);
+  const [history, setHistory] = useState<TenderHelpersHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
@@ -353,27 +362,24 @@ export default function TenderHelpersPage() {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const response = await listPayments({
-        page: 1,
-        per_page: 20,
-        filters: {
-          incoming: true,
-          account: config.recipient_account,
-          bic: config.recipient_bank_code,
-        },
+      const params = new URLSearchParams({
+        layer,
+        limit: '20',
+        recipient_account: config.recipient_account,
+        recipient_bank_code: config.recipient_bank_code,
       });
-      const paymentsData = response.result?.payments || response.result || [];
-      if (Array.isArray(paymentsData)) {
-        setHistory(paymentsData as PaymentDetail[]);
-      } else {
-        setHistory([]);
+      const response = await fetch(`/api/tender-helpers/history?${params.toString()}`);
+      const data = (await response.json()) as { ok: boolean; data?: TenderHelpersHistoryEntry[]; error?: { message?: string } };
+      if (!data.ok) {
+        throw new Error(data.error?.message || 'Не удалось загрузить историю платежей');
       }
+      setHistory(Array.isArray(data.data) ? data.data : []);
     } catch (error) {
       setHistoryError(error instanceof Error ? error.message : 'Не удалось загрузить историю платежей');
     } finally {
       setHistoryLoading(false);
     }
-  }, [config.recipient_account, config.recipient_bank_code, layer, listPayments]);
+  }, [config.recipient_account, config.recipient_bank_code, layer]);
 
   useEffect(() => {
     if (activeTab !== 'transfer') {
@@ -925,28 +931,26 @@ export default function TenderHelpersPage() {
                           <th>ID</th>
                           <th>Сумма</th>
                           <th>Статус</th>
-                          <th>Идентиф.</th>
                           <th>Дата</th>
                         </tr>
                       </thead>
                       <tbody>
                         {history.map((payment, index) => {
-                          const paymentId = payment.payment_id || '';
-                          const statusLabel = HISTORY_STATUS_LABELS[payment.status] || payment.status || '—';
+                          const paymentId = payment.service_pay_key || '';
+                          const statusLabel = HISTORY_STATUS_LABELS[payment.status || ''] || payment.status || '—';
                           return (
                             <tr key={paymentId || `history-${index}`}>
                               <td>
                                 {paymentId ? (
-                                  <Link href={`/payments/${paymentId}`} className="payment-id-link">
+                                  <span className="payment-id-link">
                                     {paymentId.slice(0, 8)}...
-                                  </Link>
+                                  </span>
                                 ) : (
                                   '—'
                                 )}
                               </td>
                               <td>{formatMoney(typeof payment.amount === 'number' ? payment.amount : Number.parseFloat(String(payment.amount || '')))}</td>
                               <td>{statusLabel}</td>
-                              <td>{payment.identify ? 'Да' : 'Нет'}</td>
                               <td>{payment.created_at ? new Date(payment.created_at).toLocaleString('ru-RU') : '—'}</td>
                             </tr>
                           );

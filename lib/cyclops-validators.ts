@@ -239,11 +239,14 @@ export const getVirtualAccountsTransferSchema = z.object({
  * Enum для статуса платежа
  */
 export const paymentStatusEnum = z.enum([
-  'new',
-  'in_process',
-  'executed',
-  'rejected',
-  'returned',
+  'NEW',
+  'CREATED',
+  'WAIT_PAID',
+  'WAIT_VERIFY',
+  'WAIT_SEND',
+  'PAID',
+  'K2',
+  'CANCELED',
 ]);
 
 /**
@@ -355,6 +358,9 @@ export function validateIdentifyAmounts(
  * Проверяет, можно ли идентифицировать платёж данного типа
  */
 export function canIdentifyPaymentType(type: string): boolean {
+  if (!type) {
+    return false;
+  }
   const unidentifiableTypes = [
     'incoming_unrecognized',
     'unrecognized_refund',

@@ -33,6 +33,11 @@ interface AppState {
   }>;
   addRecentAction: (action: Omit<AppState['recentActions'][0], 'id' | 'timestamp'>) => void;
   clearRecentActions: () => void;
+
+  // Локальные оверрайды статусов платежей (для синхронизации UI между страницами)
+  paymentOverrides: Record<string, { identify?: boolean; status?: string; type?: string; updatedAt?: number }>;
+  setPaymentOverride: (paymentKey: string, patch: { identify?: boolean; status?: string; type?: string }) => void;
+  clearPaymentOverride: (paymentKey: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -97,6 +102,26 @@ export const useAppStore = create<AppState>()(
           ],
         })),
       clearRecentActions: () => set({ recentActions: [] }),
+
+      // Локальные оверрайды платежей (не персистятся)
+      paymentOverrides: {},
+      setPaymentOverride: (paymentKey, patch) =>
+        set((state) => ({
+          paymentOverrides: {
+            ...state.paymentOverrides,
+            [paymentKey]: {
+              ...state.paymentOverrides[paymentKey],
+              ...patch,
+              updatedAt: Date.now(),
+            },
+          },
+        })),
+      clearPaymentOverride: (paymentKey) =>
+        set((state) => {
+          const next = { ...state.paymentOverrides };
+          delete next[paymentKey];
+          return { paymentOverrides: next };
+        }),
     }),
     {
       name: 'cyclops-dashboard-storage',
@@ -106,6 +131,7 @@ export const useAppStore = create<AppState>()(
         connectionStatusCheckedAt: state.connectionStatusCheckedAt,
         autoPaymentRules: state.autoPaymentRules,
         favoriteBeneficiaries: state.favoriteBeneficiaries,
+        paymentOverrides: state.paymentOverrides,
       }),
     }
   )

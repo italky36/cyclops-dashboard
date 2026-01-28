@@ -7,6 +7,12 @@ import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
 import type { PaymentDetail, IdentifyPaymentResult } from '@/types/cyclops';
 import { canIdentifyPaymentType } from '@/lib/cyclops-validators';
+import {
+  normalizePaymentRecord,
+  getDisplayPaymentType,
+  isIncomingPaymentType,
+  getDisplayIdentifyFlag,
+} from '@/lib/cyclops-payments';
 import { RateLimitBadge, RefreshButton } from '../components/RateLimitBadge';
 import { IdentifyModal } from '../components/IdentifyModal';
 
@@ -24,15 +30,30 @@ const TYPE_LABELS: Record<string, string> = {
   unrecognized_refund: 'Возврат нер.',
   unrecognized_refund_sbp: 'Возврат СБП',
   payment_contract: 'По реквизитам',
+  payment_contract_by_sbp: 'По СБП',
   payment_contract_by_sbp_v2: 'СБП v2',
   payment_contract_to_card: 'На карту',
   commission: 'Комиссия',
   ndfl: 'НДФЛ',
+  ndfl_from_virtual_account: 'НДФЛ (VA)',
+  ndfl_to_executor: 'НДФЛ исполнителю',
+  ndfl_to_virtual_account: 'НДФЛ на VA',
+  refund_virtual_account: 'Возврат VA',
   refund: 'Возврат',
   card: 'Карта',
+  unhandled_spb_v2: 'СБП v2 (ожид.)',
+  collection_order: 'Инкассо',
 };
 
 const STATUS_LABELS: Record<string, { label: string; class: string }> = {
+  NEW: { label: 'Новый', class: 'badge-neutral' },
+  CREATED: { label: 'Создан', class: 'badge-neutral' },
+  WAIT_PAID: { label: 'Ждёт оплаты', class: 'badge-warning' },
+  WAIT_VERIFY: { label: 'Ждёт проверки', class: 'badge-warning' },
+  WAIT_SEND: { label: 'Ждёт отправки', class: 'badge-warning' },
+  PAID: { label: 'Оплачен', class: 'badge-success' },
+  K2: { label: 'Картотека', class: 'badge-warning' },
+  CANCELED: { label: 'Отменён', class: 'badge-error' },
   new: { label: 'Новый', class: 'badge-neutral' },
   in_process: { label: 'В обработке', class: 'badge-warning' },
   executed: { label: 'Исполнен', class: 'badge-success' },
@@ -57,6 +78,8 @@ export default function PaymentDetailPage() {
 
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
+  const paymentOverrides = useAppStore((s) => s.paymentOverrides);
+  const setPaymentOverride = useAppStore((s) => s.setPaymentOverride);
   const { getPayment, listVirtualAccounts, identifyPayment: identifyPaymentAction } = useCyclops({ layer });
 
   const [payment, setPayment] = useState<PaymentDetail | null>(null);
@@ -92,13 +115,33 @@ export default function PaymentDetailPage() {
         listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
       ]);
 
-      const paymentData = paymentRes.result?.payment || paymentRes.result;
+      const paymentData =
+        paymentRes.result?.payment ||
+        (paymentRes as { data?: { payment?: PaymentDetail } }).data?.payment ||
+        (paymentRes.result as { data?: { payment?: PaymentDetail } } | undefined)?.data?.payment ||
+        paymentRes.result ||
+        (paymentRes as { data?: PaymentDetail }).data;
       if (!paymentData) {
         setNotFound(true);
         return;
       }
 
-      setPayment(paymentData as PaymentDetail);
+      const normalized = normalizePaymentRecord(paymentData as Record<string, unknown>);
+      if (!normalized) {
+        setNotFound(true);
+        return;
+      }
+      setPayment(normalized);
+      if (typeof normalized.status === 'string') {
+        setPaymentOverride(`${layer}:${normalized.payment_id}`, { status: normalized.status });
+      }
+      if (typeof normalized.type === 'string') {
+        setPaymentOverride(`${layer}:${normalized.payment_id}`, { type: normalized.type });
+      }
+      const identifyFlag = getDisplayIdentifyFlag(normalized);
+      if (typeof identifyFlag === 'boolean') {
+        setPaymentOverride(`${layer}:${normalized.payment_id}`, { identify: identifyFlag });
+      }
 
       // Cache info
       const cache = (paymentRes as { _cache?: typeof detailCacheInfo })._cache;
@@ -123,7 +166,7 @@ export default function PaymentDetailPage() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [paymentId, getPayment, listVirtualAccounts]);
+  }, [paymentId, getPayment, listVirtualAccounts, layer, setPaymentOverride]);
 
   useEffect(() => {
     loadData();
@@ -147,6 +190,8 @@ export default function PaymentDetailPage() {
         description: `Платёж ${params.payment_id.slice(0, 8)}... идентифицирован`,
         layer,
       });
+
+      setPaymentOverride(`${layer}:${params.payment_id}`, { identify: true });
 
       return response.result || null;
     } catch (err) {
@@ -186,7 +231,15 @@ export default function PaymentDetailPage() {
     );
   };
 
-  const canIdentify = payment && payment.incoming && !payment.identify && canIdentifyPaymentType(payment.type);
+  const override = payment ? paymentOverrides[`${layer}:${payment.payment_id || paymentId}`] : undefined;
+  const typeValue = payment ? getDisplayPaymentType(payment) || '' : '';
+  const overrideType = override?.type;
+  const displayedType = typeValue || overrideType || '';
+  const incomingValue = payment
+    ? (typeof payment.incoming === 'boolean' ? payment.incoming : isIncomingPaymentType(displayedType))
+    : false;
+  const identifyValue = payment ? (override?.identify ?? getDisplayIdentifyFlag(payment) ?? false) : false;
+  const canIdentify = payment && incomingValue && !identifyValue && canIdentifyPaymentType(displayedType || payment.type || '');
 
   // Loading state
   if (isLoading) {
@@ -316,7 +369,15 @@ export default function PaymentDetailPage() {
 
   if (!payment) return null;
 
-  const status = STATUS_LABELS[payment.status] || { label: payment.status, class: 'badge-neutral' };
+  const displayPaymentId = payment.payment_id || paymentId;
+  const statusValue = override?.status ?? payment.status;
+  const statusLabel =
+    statusValue === ''
+      ? '""'
+      : statusValue
+        ? String(statusValue)
+        : '—';
+  const statusClass = STATUS_LABELS[statusValue]?.class || 'badge-neutral';
   const additionalFields = getAdditionalFields();
 
   return (
@@ -330,7 +391,7 @@ export default function PaymentDetailPage() {
             </svg>
             Назад к списку
           </Link>
-          <h1 className="page-title">Платёж {payment.payment_id.slice(0, 8)}...</h1>
+          <h1 className="page-title">Платёж {displayPaymentId.slice(0, 8)}...</h1>
         </div>
         <div className="header-actions">
           {detailCacheInfo.cached && (
@@ -357,35 +418,35 @@ export default function PaymentDetailPage() {
           <div className="info-grid">
             <div className="info-item">
               <span className="info-label">ID</span>
-              <span className="info-value mono">{payment.payment_id}</span>
+              <span className="info-value mono">{displayPaymentId}</span>
             </div>
             <div className="info-item">
               <span className="info-label">Тип</span>
-              <span className={`type-badge ${payment.incoming ? 'incoming' : 'outgoing'}`}>
-                {payment.incoming ? '\u2193' : '\u2191'} {TYPE_LABELS[payment.type] || payment.type}
+              <span className={`type-badge ${incomingValue ? 'incoming' : 'outgoing'}`}>
+                {TYPE_LABELS[displayedType] || displayedType || '—'}
               </span>
             </div>
             <div className="info-item">
               <span className="info-label">Статус</span>
-              <span className={`badge ${status.class}`}>{status.label}</span>
+              <span className={`badge ${statusClass}`}>{statusLabel}</span>
             </div>
             <div className="info-item">
               <span className="info-label">Сумма</span>
-              <span className={`info-value money ${payment.incoming ? 'positive' : ''}`}>
-                {payment.incoming ? '+' : ''}{formatMoney(payment.amount)}
+              <span className={`info-value money ${incomingValue ? 'positive' : ''}`}>
+                {incomingValue ? '+' : ''}{formatMoney(payment.amount)}
               </span>
             </div>
             <div className="info-item">
               <span className="info-label">Входящий</span>
-              <span className={`badge ${payment.incoming ? 'badge-success' : 'badge-neutral'}`}>
-                {payment.incoming ? 'Да' : 'Нет'}
+              <span className={`badge ${incomingValue ? 'badge-success' : 'badge-neutral'}`}>
+                {incomingValue ? 'Да' : 'Нет'}
               </span>
             </div>
             <div className="info-item">
               <span className="info-label">Идентифицирован</span>
-              {payment.incoming ? (
-                <span className={`badge ${payment.identify ? 'badge-success' : 'badge-warning'}`}>
-                  {payment.identify ? 'Да' : 'Нет'}
+              {incomingValue ? (
+                <span className={`badge ${identifyValue ? 'badge-success' : 'badge-warning'}`}>
+                  {identifyValue ? 'Да' : 'Нет'}
                 </span>
               ) : (
                 <span className="badge badge-neutral">-</span>
@@ -614,11 +675,11 @@ export default function PaymentDetailPage() {
         )}
 
         {/* Unidentifiable types warning */}
-        {payment.incoming && !payment.identify && !canIdentifyPaymentType(payment.type) && (
+        {incomingValue && !identifyValue && !canIdentifyPaymentType(displayedType || payment.type || '') && (
           <div className="card warning-card">
             <h3 className="card-title">Идентификация недоступна</h3>
             <p>
-              Платёж типа &quot;{TYPE_LABELS[payment.type] || payment.type}&quot; не может быть идентифицирован вручную.
+              Платёж типа &quot;{TYPE_LABELS[displayedType] || displayedType || '—'}&quot; не может быть идентифицирован вручную.
             </p>
           </div>
         )}

@@ -60,7 +60,7 @@ export function getErrorUserHint(code: number): string | null {
     case CYCLOPS_ERROR_CODES.BENEFICIARY_NOT_ACTIVE:
       return 'Активируйте бенефициара перед выполнением операции';
     case CYCLOPS_ERROR_CODES.VIRTUAL_ACCOUNT_NOT_FOUND:
-      return 'Выберите корректный virtual_account типа standard или создайте новый виртуальный счёт';
+      return 'Проверьте виртуальный счёт и выберите корректный virtual_account типа standard или создайте новый виртуальный счёт';
     case CYCLOPS_ERROR_CODES.INSUFFICIENT_FUNDS:
       return 'Пополните виртуальный счёт или уменьшите сумму операции';
     case CYCLOPS_ERROR_CODES.IDEMPOTENT_REQUEST_IN_PROCESS:

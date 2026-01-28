@@ -5,41 +5,10 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
-import type { PaymentDetail, PaymentFilters, IdentifyPaymentResult } from '@/types/cyclops';
-import { canIdentifyPaymentType } from '@/lib/cyclops-validators';
+import type { PaymentDetail, PaymentFilters } from '@/types/cyclops';
+import { normalizePaymentRecord } from '@/lib/cyclops-payments';
 import { PaymentFilters as PaymentFiltersComponent } from './components/PaymentFilters';
 import { RateLimitBadge, RefreshButton } from './components/RateLimitBadge';
-import { IdentifyModal } from './components/IdentifyModal';
-
-interface VirtualAccountOption {
-  virtual_account_id: string;
-  beneficiary_inn?: string;
-  type?: string;
-}
-
-const TYPE_LABELS: Record<string, string> = {
-  incoming: 'Входящий',
-  incoming_sbp: 'Входящий СБП',
-  incoming_by_sbp_v2: 'СБП v2',
-  incoming_unrecognized: 'Нераспознан',
-  unrecognized_refund: 'Возврат нер.',
-  unrecognized_refund_sbp: 'Возврат СБП',
-  payment_contract: 'По реквизитам',
-  payment_contract_by_sbp_v2: 'СБП v2',
-  payment_contract_to_card: 'На карту',
-  commission: 'Комиссия',
-  ndfl: 'НДФЛ',
-  refund: 'Возврат',
-  card: 'Карта',
-};
-
-const STATUS_LABELS: Record<string, { label: string; class: string }> = {
-  new: { label: 'Новый', class: 'badge-neutral' },
-  in_process: { label: 'В обработке', class: 'badge-warning' },
-  executed: { label: 'Исполнен', class: 'badge-success' },
-  rejected: { label: 'Отклонён', class: 'badge-error' },
-  returned: { label: 'Возвращён', class: 'badge-error' },
-};
 
 const parseBooleanParam = (value: string | null): boolean | undefined => {
   if (value === 'true') return true;
@@ -53,15 +22,51 @@ const parseNumberParam = (value: string | null, fallback: number): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const parseFilterDateTime = (value?: string): Date | null => {
+  if (!value) return null;
+  let normalized = value;
+  if (normalized.includes(' ') && !normalized.includes('T')) {
+    normalized = normalized.replace(' ', 'T');
+  }
+  if (/[+-]\d{2}$/.test(normalized)) {
+    normalized = `${normalized}:00`;
+  }
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const parseFilterDateOnly = (value?: string): { year: number; month: number; day: number } | null => {
+  if (!value) return null;
+  const parts = value.split('-').map((part) => Number.parseInt(part, 10));
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+    return null;
+  }
+  return { year: parts[0], month: parts[1], day: parts[2] };
+};
+
+const isSameDate = (date: Date, target: { year: number; month: number; day: number }) =>
+  date.getFullYear() === target.year &&
+  date.getMonth() + 1 === target.month &&
+  date.getDate() === target.day;
+
+const formatDateTime = (value?: string | null): string => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('ru-RU', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const parseFiltersFromQuery = (params: URLSearchParams) => {
   const filters: PaymentFilters = {};
   const incoming = parseBooleanParam(params.get('incoming'));
   if (incoming !== undefined) {
     filters.incoming = incoming;
-  }
-  const identify = parseBooleanParam(params.get('identify'));
-  if (identify !== undefined) {
-    filters.identify = identify;
   }
   const account = params.get('account');
   if (account) {
@@ -83,12 +88,8 @@ const parseFiltersFromQuery = (params: URLSearchParams) => {
 
 export default function PaymentsPage() {
   const layer = useAppStore((s) => s.layer);
-  const addRecentAction = useAppStore((s) => s.addRecentAction);
   const {
     listPayments,
-    listVirtualAccounts,
-    getPayment,
-    identifyPayment: identifyPaymentAction,
   } = useCyclops({ layer });
   const searchParams = useSearchParams();
 
@@ -99,7 +100,6 @@ export default function PaymentsPage() {
   const initialQuery = initialQueryRef.current;
 
   const [payments, setPayments] = useState<PaymentDetail[]>([]);
-  const [virtualAccounts, setVirtualAccounts] = useState<VirtualAccountOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,10 +121,6 @@ export default function PaymentsPage() {
   const [tenderSource, setTenderSource] = useState(initialQuery.tenderSource);
   const [autoFindEnabled, setAutoFindEnabled] = useState(initialQuery.autoFind);
 
-  // Identify modal
-  const [identifyPayment, setIdentifyPayment] = useState<PaymentDetail | null>(null);
-  const [isIdentifying, setIsIdentifying] = useState(false);
-
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setIsRefreshing(true);
@@ -134,30 +130,120 @@ export default function PaymentsPage() {
     setError(null);
 
     try {
-      const [paymentsRes, accountsRes] = await Promise.all([
-        listPayments({ page, per_page: perPage, filters }),
-        listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
-      ]);
+      let forcedTotal: number | null = null;
+      let forcedPage: number | null = null;
+      const localAccount = filters.account?.trim();
+      const localBic = filters.bic?.trim();
+      const localCreateDate = parseFilterDateOnly(filters.create_date);
+      const localUpdatedFrom = parseFilterDateTime(filters.updated_at_from);
+      const localUpdatedTo = parseFilterDateTime(filters.updated_at_to);
+      const hasLocalFilters =
+        typeof filters.incoming === 'boolean' ||
+        Boolean(localAccount) ||
+        Boolean(localBic) ||
+        Boolean(localCreateDate) ||
+        Boolean(localUpdatedFrom) ||
+        Boolean(localUpdatedTo);
+      const requestFilters: PaymentFilters = { ...filters };
+      delete requestFilters.incoming;
+      delete requestFilters.account;
+      delete requestFilters.bic;
+      delete requestFilters.create_date;
+      delete requestFilters.updated_at_from;
+      delete requestFilters.updated_at_to;
+      const paymentsRes = await listPayments({
+        page,
+        per_page: perPage,
+        filters: Object.keys(requestFilters).length ? requestFilters : undefined,
+      });
 
       // Extract payments from response
-      const paymentsData = paymentsRes.result?.payments || paymentsRes.result || [];
+      const paymentsData =
+        paymentsRes.result?.payments ||
+        (paymentsRes as { data?: { payments?: PaymentDetail[] } }).data?.payments ||
+        (paymentsRes.result as { data?: { payments?: PaymentDetail[] } } | undefined)?.data?.payments ||
+        paymentsRes.result ||
+        (paymentsRes as { data?: PaymentDetail[] }).data ||
+        [];
       if (Array.isArray(paymentsData)) {
-        const normalized = paymentsData.map((item) => {
-          const entry = (item as { payment?: PaymentDetail })?.payment || item;
-          const paymentEntry = entry as PaymentDetail & { id?: string };
-          if (!paymentEntry.payment_id && paymentEntry.id) {
-            return { ...paymentEntry, payment_id: String(paymentEntry.id) };
+        const normalized = paymentsData
+          .map((item) => normalizePaymentRecord(item as Record<string, unknown>))
+          .filter((item): item is PaymentDetail => Boolean(item));
+        const shouldFilterIncoming = typeof filters.incoming === 'boolean';
+        const filtered = normalized.filter((item) => {
+          if (shouldFilterIncoming && item.incoming !== filters.incoming) {
+            return false;
           }
-          return paymentEntry;
+
+          if (localAccount) {
+            const payerAccount = item.payer_account || '';
+            const recipientAccount = item.recipient_account || '';
+            if (!payerAccount.includes(localAccount) && !recipientAccount.includes(localAccount)) {
+              return false;
+            }
+          }
+
+          if (localBic) {
+            const payerBic = item.payer_bank_code || '';
+            const recipientBic = item.recipient_bank_code || '';
+            if (!payerBic.includes(localBic) && !recipientBic.includes(localBic)) {
+              return false;
+            }
+          }
+
+          if (localCreateDate) {
+            const dateValue = item.first_seen_at || item.last_seen_at;
+            if (!dateValue) return false;
+            const date = new Date(dateValue);
+            if (Number.isNaN(date.getTime())) return false;
+            if (!isSameDate(date, localCreateDate)) {
+              return false;
+            }
+          }
+
+          if (localUpdatedFrom || localUpdatedTo) {
+            const dateValue = item.last_seen_at || item.first_seen_at;
+            if (!dateValue) return false;
+            const date = new Date(dateValue);
+            if (Number.isNaN(date.getTime())) return false;
+            if (localUpdatedFrom && date < localUpdatedFrom) {
+              return false;
+            }
+            if (localUpdatedTo && date > localUpdatedTo) {
+              return false;
+            }
+          }
+
+          return true;
         });
-        setPayments(normalized);
+        setPayments(filtered);
+        if (hasLocalFilters) {
+          forcedTotal = filtered.length;
+          forcedPage = 1;
+        }
       }
 
       // Extract meta
-      const meta = paymentsRes.result?.meta;
+      const meta =
+        paymentsRes.result?.meta ||
+        (paymentsRes as { data?: { meta?: Record<string, unknown> } }).data?.meta ||
+        (paymentsRes.result as { data?: { meta?: Record<string, unknown> } } | undefined)?.data?.meta;
       if (meta) {
-        setTotal(meta.total || 0);
-        setCurrentPage(meta.page?.current_page || page);
+        const typedMeta = meta as { total?: number; page?: { current_page?: number } };
+        if (forcedTotal !== null) {
+          setTotal(forcedTotal);
+          setCurrentPage(forcedPage ?? 1);
+        } else {
+          setTotal(typeof typedMeta.total === 'number' ? typedMeta.total : 0);
+          setCurrentPage(
+            typeof typedMeta.page?.current_page === 'number'
+              ? typedMeta.page.current_page
+              : page
+          );
+        }
+      } else if (forcedTotal !== null) {
+        setTotal(forcedTotal);
+        setCurrentPage(forcedPage ?? 1);
       }
 
       // Cache info
@@ -166,11 +252,6 @@ export default function PaymentsPage() {
         setListCacheInfo(cache);
       }
 
-      // Virtual accounts
-      const accountIds = accountsRes.result?.virtual_accounts;
-      if (Array.isArray(accountIds)) {
-        setVirtualAccounts(accountIds.map((id: string) => ({ virtual_account_id: id })));
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
       setError(message);
@@ -179,7 +260,7 @@ export default function PaymentsPage() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [filters, page, perPage, listPayments, listVirtualAccounts]);
+  }, [filters, page, perPage, listPayments]);
 
   useEffect(() => {
     const parsed = parseFiltersFromQuery(searchParams);
@@ -237,62 +318,6 @@ export default function PaymentsPage() {
     setPage(1);
   };
 
-  const handleIdentifySubmit = async (params: {
-    payment_id: string;
-    is_returned_payment?: boolean;
-    owners: Array<{ virtual_account: string; amount: number }>;
-  }): Promise<IdentifyPaymentResult | null> => {
-    setIsIdentifying(true);
-    try {
-      const response = await identifyPaymentAction(params);
-
-      addRecentAction({
-        type: 'Идентификация',
-        description: `Платёж ${params.payment_id.slice(0, 8)}... идентифицирован`,
-        layer,
-      });
-
-      return response.result || null;
-    } catch (err) {
-      throw err;
-    } finally {
-      setIsIdentifying(false);
-    }
-  };
-
-  const handleIdentifySuccess = () => {
-    setIdentifyPayment(null);
-    loadData(true);
-  };
-
-  const handleIdentifyOpen = async (payment: PaymentDetail) => {
-    if (!payment.payment_id) {
-      return;
-    }
-
-    if (typeof payment.amount === 'number' && Number.isFinite(payment.amount)) {
-      setIdentifyPayment(payment);
-      return;
-    }
-
-    try {
-      const detail = await getPayment(payment.payment_id);
-      const detailPayment = detail.result?.payment || detail.result;
-      if (detailPayment) {
-        setIdentifyPayment(detailPayment as PaymentDetail);
-      } else {
-        setIdentifyPayment(payment);
-      }
-    } catch (err) {
-      console.error('Failed to load payment detail:', err);
-      setIdentifyPayment(payment);
-    }
-  };
-
-  const unidentifiedCount = payments.filter(
-    (p) => p.incoming && !p.identify
-  ).length;
-
   const totalPages = Math.ceil(total / perPage);
 
   return (
@@ -305,11 +330,6 @@ export default function PaymentsPage() {
           </p>
         </div>
         <div className="header-actions">
-          {unidentifiedCount > 0 && (
-            <div className="pending-badge">
-              {unidentifiedCount} ожидают идентификации
-            </div>
-          )}
           <RefreshButton
             onClick={handleRefresh}
             isLoading={isRefreshing}
@@ -321,7 +341,7 @@ export default function PaymentsPage() {
 
       {tenderSource && (
         <div className="tender-filter-badge">
-          Фильтр установлен из Tender-Helpers: identify=false, account={filters.account || '—'}, bic={filters.bic || '—'}
+          Фильтр установлен из Tender-Helpers: account={filters.account || '—'}, bic={filters.bic || '—'}
         </div>
       )}
 
@@ -414,14 +434,10 @@ export default function PaymentsPage() {
               </svg>
             </div>
             <p className="empty-state-title">
-              {filters.identify === false
-                ? 'Неидентифицированных платежей нет'
-                : 'Платежи не найдены'}
+              Платежи не найдены
             </p>
             <p className="empty-state-description">
-              {filters.identify === false
-                ? 'Все входящие платежи идентифицированы. Новые платежи появляются с задержкой 10-30 секунд.'
-                : 'Попробуйте изменить фильтры или дождитесь поступления платежей.'}
+              Попробуйте изменить фильтры или дождитесь поступления платежей.
             </p>
             {Object.keys(filters).length > 0 && (
               <button className="btn btn-secondary" onClick={handleFiltersReset}>
@@ -441,24 +457,25 @@ export default function PaymentsPage() {
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Тип</th>
-                    <th>Статус</th>
+                    <th>Дата и время</th>
                     <th>Входящий</th>
-                    <th>Идентиф.</th>
                     <th>Счёт платильщика</th>
                     <th>БИК</th>
                     <th>Счёт получателя</th>
                     <th>БИК</th>
-                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {payments.map((payment, index) => {
-                    const status = STATUS_LABELS[payment.status] || { label: payment.status, class: 'badge-neutral' };
-                    const isIncoming = payment.incoming;
-                    const canIdentify = isIncoming && !payment.identify && canIdentifyPaymentType(payment.type) && Boolean(payment.payment_id);
                     const paymentId = payment.payment_id || '';
+                    const isIncoming = typeof payment.incoming === 'boolean' ? payment.incoming : false;
                     const paymentKey = paymentId || `row-${index}`;
+                    const firstSeenAt =
+                      typeof payment.first_seen_at === 'string'
+                        ? payment.first_seen_at
+                        : typeof payment.last_seen_at === 'string'
+                          ? payment.last_seen_at
+                          : null;
 
                     return (
                       <tr key={paymentKey}>
@@ -474,32 +491,12 @@ export default function PaymentsPage() {
                             '—'
                           )}
                         </td>
-                        <td>
-                          <span className={`type-badge ${isIncoming ? 'incoming' : 'outgoing'}`}>
-                            {isIncoming ? '\u2193' : '\u2191'} {TYPE_LABELS[payment.type] || payment.type}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`badge ${status.class}`}>
-                            {status.label}
-                          </span>
-                        </td>
+                        <td>{formatDateTime(firstSeenAt)}</td>
                         <td>
                           {isIncoming ? (
                             <span className="badge badge-success">Да</span>
                           ) : (
                             <span className="badge badge-neutral">Нет</span>
-                          )}
-                        </td>
-                        <td>
-                          {isIncoming ? (
-                            payment.identify ? (
-                              <span className="badge badge-success">Да</span>
-                            ) : (
-                              <span className="badge badge-warning">Нет</span>
-                            )
-                          ) : (
-                            <span className="badge badge-neutral">-</span>
                           )}
                         </td>
                         <td className="account-cell">
@@ -521,16 +518,6 @@ export default function PaymentsPage() {
                         </td>
                         <td className="bic-cell">
                           {payment.recipient_bank_code || '-'}
-                        </td>
-                        <td>
-                          {canIdentify && (
-                            <button
-                              className="btn btn-sm btn-primary"
-                              onClick={() => handleIdentifyOpen(payment)}
-                            >
-                              Идентифицировать
-                            </button>
-                          )}
                         </td>
                       </tr>
                     );
@@ -579,18 +566,6 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {/* Identify Modal */}
-      {identifyPayment && (
-        <IdentifyModal
-          payment={identifyPayment}
-          virtualAccounts={virtualAccounts}
-          isSubmitting={isIdentifying}
-          onSubmit={handleIdentifySubmit}
-          onClose={() => setIdentifyPayment(null)}
-          onSuccess={handleIdentifySuccess}
-        />
-      )}
-
       <style jsx>{`
         .payments-page {
           max-width: 1600px;
@@ -608,15 +583,6 @@ export default function PaymentsPage() {
           display: flex;
           align-items: center;
           gap: 12px;
-        }
-
-        .pending-badge {
-          padding: 8px 16px;
-          background: var(--color-warning-bg);
-          color: var(--color-warning);
-          border-radius: 20px;
-          font-size: 14px;
-          font-weight: 500;
         }
 
         .tender-filter-badge {
@@ -825,14 +791,12 @@ export default function PaymentsPage() {
         }
 
         @media (max-width: 1200px) {
+          .table th:nth-child(5),
+          .table td:nth-child(5),
           .table th:nth-child(6),
           .table td:nth-child(6),
           .table th:nth-child(7),
-          .table td:nth-child(7),
-          .table th:nth-child(8),
-          .table td:nth-child(8),
-          .table th:nth-child(9),
-          .table td:nth-child(9) {
+          .table td:nth-child(7) {
             display: none;
           }
         }

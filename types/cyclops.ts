@@ -269,6 +269,61 @@ export interface GetBeneficiaryResult {
   permission_description?: string | null;
 }
 
+// Documents
+export type DocumentType = 'contract_offer' | 'service_agreement' | string;
+
+export interface DocumentListItem {
+  id?: string;
+  document_id?: string;
+  type?: DocumentType;
+  entity_type?: string;
+  entity_id?: string;
+  success_added?: boolean;
+  success_added_desc?: string;
+  document_number?: string;
+  document_date?: string;
+}
+
+export interface ListDocumentsResult {
+  documents: Array<DocumentListItem | string>;
+  meta?: {
+    total?: number;
+    page?: {
+      current_page?: number;
+      per_page?: number;
+    };
+  };
+}
+
+export interface DocumentDetails {
+  id?: string;
+  document_id?: string;
+  type?: DocumentType;
+  document_number?: string;
+  document_date?: string;
+  success_added?: boolean;
+  success_added_desc?: string;
+}
+
+export interface GetDocumentResult {
+  document?: DocumentDetails;
+  id?: string;
+  document_id?: string;
+  type?: DocumentType;
+  document_number?: string;
+  document_date?: string;
+  success_added?: boolean;
+  success_added_desc?: string;
+}
+
+export interface UploadDocumentResult {
+  id?: string;
+  document_id?: string;
+  type?: DocumentType;
+  success_added?: boolean;
+  success_added_desc?: string;
+}
+
 // Virtual Account Types
 export type VirtualAccountType = 'standard' | 'for_ndfl';
 
@@ -450,7 +505,7 @@ export const CYCLOPS_ERROR_MESSAGES: Record<number, string> = {
   [CYCLOPS_ERROR_CODES.INSUFFICIENT_FUNDS]: 'Недостаточно средств на виртуальном счёте',
   [CYCLOPS_ERROR_CODES.REFUND_ERROR]: 'Ошибка возврата платежа',
   [CYCLOPS_ERROR_CODES.COMPLIANCE_ERROR]: 'Ошибка комплаенс-проверки',
-  [CYCLOPS_ERROR_CODES.DOCUMENT_NOT_FOUND]: 'Документ не найден',
+  [CYCLOPS_ERROR_CODES.DOCUMENT_NOT_FOUND]: 'Договор оферты не найден, загрузите документ',
   [CYCLOPS_ERROR_CODES.INCORRECT_VO_CODES]: 'Некорректные или отсутствующие коды VO для платежа нерезиденту',
   [CYCLOPS_ERROR_CODES.RESTRICTIONS_IMPOSED]: 'Ограничения по ИП/исполнительному производству',
   [CYCLOPS_ERROR_CODES.IDEMPOTENT_REQUEST_IN_PROCESS]: 'Запрос с таким ext_key уже обрабатывается',
@@ -567,14 +622,29 @@ export type PaymentType =
   | 'unrecognized_refund'
   | 'unrecognized_refund_sbp'
   | 'payment_contract'
+  | 'payment_contract_by_sbp'
   | 'payment_contract_by_sbp_v2'
   | 'payment_contract_to_card'
   | 'commission'
   | 'ndfl'
+  | 'ndfl_from_virtual_account'
+  | 'ndfl_to_executor'
+  | 'ndfl_to_virtual_account'
+  | 'refund_virtual_account'
   | 'refund'
-  | 'card';
+  | 'card'
+  | 'unhandled_spb_v2'
+  | 'collection_order';
 
 export type PaymentStatus =
+  | 'NEW'
+  | 'CREATED'
+  | 'WAIT_PAID'
+  | 'WAIT_VERIFY'
+  | 'WAIT_SEND'
+  | 'PAID'
+  | 'K2'
+  | 'CANCELED'
   | 'new'
   | 'in_process'
   | 'executed'
@@ -602,6 +672,8 @@ export interface PaymentDetail {
   identify: boolean;
   created_at: string;
   updated_at?: string;
+  first_seen_at?: string;
+  last_seen_at?: string;
 
   // Document fields
   purpose?: string;

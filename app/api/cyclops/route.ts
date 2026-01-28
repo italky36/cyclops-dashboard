@@ -7,6 +7,11 @@ import {
   mapCachedToApi,
 } from '@/lib/beneficiaries-cache';
 import {
+  upsertPaymentsFromList,
+  getCachedPaymentsByIds,
+  mapCachedPayments,
+} from '@/lib/payments-cache';
+import {
   generateCacheKey,
   shouldCacheMethod,
   getFromCache,
@@ -19,7 +24,7 @@ import {
   createLogEntry,
   logCyclopsRequest,
 } from '@/lib/cyclops-errors';
-import type { Layer, GetBeneficiaryResult, ListBeneficiariesResult, JsonRpcResponse, CyclopsError } from '@/types/cyclops';
+import type { Layer, GetBeneficiaryResult, ListBeneficiariesResult, ListPaymentsV2Result, JsonRpcResponse, CyclopsError } from '@/types/cyclops';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -206,6 +211,27 @@ export async function POST(request: NextRequest) {
       if (cached) {
         fromCache = true;
         const cacheInfo = getCacheInfo(cacheKey);
+        let cachedData = cached.data;
+
+        if (method === 'list_payments_v2') {
+          try {
+            const typed = cachedData as JsonRpcResponse<ListPaymentsV2Result>;
+            const list = typed.result?.payments;
+            if (Array.isArray(list)) {
+              const ids = list
+                .map((item) => String((item as { payment_id?: string; id?: string }).payment_id || (item as { id?: string }).id || ''))
+                .filter((id) => id && id !== 'undefined');
+              const cachedRows = getCachedPaymentsByIds(layer, ids);
+              const enriched = mapCachedPayments(list as Array<Record<string, unknown>>, cachedRows);
+              cachedData = {
+                ...typed,
+                result: typed.result ? { ...typed.result, payments: enriched } : typed.result,
+              };
+            }
+          } catch (cacheError) {
+            console.error('[Cyclops API] cache list_payments_v2 mapping failed:', cacheError);
+          }
+        }
 
         if (process.env.NODE_ENV === 'development' || process.env.DEBUG_CYCLOPS === '1') {
           console.info('[Cyclops API] cache hit', {
@@ -216,7 +242,7 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json({
-          ...cached.data,
+          ...cachedData,
           _cache: cacheInfo,
         });
       }
@@ -289,6 +315,31 @@ export async function POST(request: NextRequest) {
         }
       } catch (cacheError) {
         console.error('[Cyclops API] cache get_beneficiary failed:', cacheError);
+      }
+    }
+
+    if (method === 'list_payments_v2') {
+      try {
+        const typed = result as JsonRpcResponse<ListPaymentsV2Result>;
+        const list = typed.result?.payments;
+        if (Array.isArray(list)) {
+          upsertPaymentsFromList(layer, list as Array<Record<string, unknown>>);
+          const ids = list
+            .map((item) => String((item as { payment_id?: string; id?: string }).payment_id || (item as { id?: string }).id || ''))
+            .filter((id) => id && id !== 'undefined');
+          const cachedRows = getCachedPaymentsByIds(layer, ids);
+          if (typed.result) {
+            typed.result.payments = mapCachedPayments(
+              list as Array<Record<string, unknown>>,
+              cachedRows
+            ) as ListPaymentsV2Result['payments'];
+          }
+          if (!result.error && shouldCacheMethod(method)) {
+            setInCache(cacheKey, result);
+          }
+        }
+      } catch (cacheError) {
+        console.error('[Cyclops API] cache list_payments_v2 failed:', cacheError);
       }
     }
 

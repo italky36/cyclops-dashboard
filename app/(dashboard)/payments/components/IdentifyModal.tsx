@@ -317,6 +317,10 @@ export function IdentifyModal({
             )}
           </div>
 
+          <div className="offer-warning">
+            <strong>Важно:</strong> для идентификации нужен договор оферты.
+          </div>
+
           {/* No standard accounts warning */}
           {standardAccounts.length === 0 && (
             <div className="warning-box">
@@ -499,6 +503,19 @@ export function IdentifyModal({
           .warning-box p {
             margin: 0 0 12px 0;
             color: var(--color-warning);
+          }
+
+          .offer-warning {
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: var(--color-warning-bg);
+            color: var(--color-warning);
+            font-size: 13px;
+            margin-bottom: 16px;
+          }
+
+          .offer-warning strong {
+            margin-right: 6px;
           }
 
           .owners-header {

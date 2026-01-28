@@ -37,6 +37,9 @@ import type {
   IdentifyPaymentParams,
   IdentifyPaymentResult,
   PaymentFilters,
+  ListDocumentsResult,
+  GetDocumentResult,
+  UploadDocumentResult,
 } from '@/types/cyclops';
 
 interface UseCyclopsOptions {
@@ -48,6 +51,8 @@ interface CacheInfo {
   cachedAt?: string;
   expiresAt?: string;
   remainingMs?: number;
+  nextAllowedAt?: string;
+  cacheAgeSeconds?: number;
 }
 
 interface ErrorInfo {
@@ -164,7 +169,11 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
 
         if (data.error) {
           const error = new Error(data._errorInfo?.userMessage || data.error.message || JSON.stringify(data.error));
-          (error as Error & { errorInfo?: ErrorInfo }).errorInfo = data._errorInfo;
+          const typedError = error as Error & { errorInfo?: ErrorInfo; code?: number };
+          typedError.errorInfo = data._errorInfo;
+          if (typeof data.error.code === 'number') {
+            typedError.code = data.error.code;
+          }
           throw error;
         }
 
@@ -180,6 +189,16 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
 
       const data = await requestPromise;
       const dataWithCache = data as JsonRpcResponse<T> & { _cache?: CacheInfo };
+
+      if (cacheKey && dataWithCache._cache?.nextAllowedAt) {
+        const nextAllowedMs = new Date(dataWithCache._cache.nextAllowedAt).getTime();
+        if (Number.isFinite(nextAllowedMs) && nextAllowedMs > Date.now()) {
+          const entry = requestCache.get(cacheKey);
+          if (entry) {
+            entry.expiresAt = nextAllowedMs;
+          }
+        }
+      }
       const cacheInfo = dataWithCache._cache;
       setState({ loading: false, error: null, errorInfo: null, cacheInfo: cacheInfo || null });
       return dataWithCache;
@@ -567,6 +586,71 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     [call]
   );
 
+  // ==================== ДОКУМЕНТЫ ====================
+
+  const listDocuments = useCallback(
+    (params?: {
+      page?: number;
+      per_page?: number;
+      filters?: {
+        beneficiary?: { id?: string };
+        deal?: { id?: string };
+        type?: string;
+      };
+    }) => {
+      const requestParams: Record<string, unknown> = {
+        page: params?.page ?? 1,
+        per_page: params?.per_page ?? 100,
+      };
+      if (params?.filters && Object.keys(params.filters).length > 0) {
+        requestParams.filters = params.filters;
+      }
+      return call<ListDocumentsResult>('list_documents', requestParams);
+    },
+    [call]
+  );
+
+  const getDocument = useCallback(
+    (document_id: string) => call<GetDocumentResult>('get_document', { document_id }),
+    [call]
+  );
+
+  const uploadDocumentBeneficiary = useCallback(
+    (params: {
+      beneficiary_id: string;
+      document_type: 'contract_offer';
+      file: File;
+      document_date?: string;
+      document_number?: string;
+    }) =>
+      (async () => {
+        const formData = new FormData();
+        formData.append('layer', layer);
+        formData.append('beneficiary_id', params.beneficiary_id);
+        formData.append('document_type', params.document_type);
+        if (params.document_date) {
+          formData.append('document_date', params.document_date);
+        }
+        if (params.document_number) {
+          formData.append('document_number', params.document_number);
+        }
+        formData.append('file', params.file, params.file.name);
+
+        const response = await fetch('/api/cyclops/upload-document', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data?.error || 'Ошибка при загрузке документа');
+        }
+
+        return data as UploadDocumentResult;
+      })(),
+    [layer]
+  );
+
   // ==================== УТИЛИТЫ ====================
 
   const echo = useCallback(
@@ -628,6 +712,9 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     // СБП
     listBanksSBP,
     generateSBPQRCode,
+    listDocuments,
+    getDocument,
+    uploadDocumentBeneficiary,
     // Утилиты
     echo,
     clearCache,

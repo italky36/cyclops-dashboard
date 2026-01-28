@@ -15,6 +15,19 @@ export interface TenderHelpersConfig {
   configured: boolean;
 }
 
+export interface TenderHelpersPayment {
+  id: number;
+  service_pay_key: string | null;
+  status: string | null;
+  amount: number | null;
+  purpose: string | null;
+  recipient_account: string | null;
+  recipient_bank_code: string | null;
+  payer_account: string | null;
+  payer_bank_code: string | null;
+  created_at: string;
+}
+
 export const DEFAULT_TENDER_HELPERS_BASE_URL =
   'https://pre.tochka.com/api/v1/tender-helpers/';
 
@@ -180,4 +193,67 @@ export function getDefaultTenderHelpersPayer(payers: TenderHelpersPayer[]): Tend
     return null;
   }
   return payers.find((payer) => payer.is_default) || payers[0];
+}
+
+export function addTenderHelpersPayment(input: {
+  service_pay_key?: string | null;
+  status?: string | null;
+  amount?: number | null;
+  purpose?: string | null;
+  recipient_account?: string | null;
+  recipient_bank_code?: string | null;
+  payer_account?: string | null;
+  payer_bank_code?: string | null;
+}) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO tender_helpers_payments
+      (service_pay_key, status, amount, purpose, recipient_account, recipient_bank_code, payer_account, payer_bank_code, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.service_pay_key ?? null,
+    input.status ?? null,
+    input.amount ?? null,
+    input.purpose ?? null,
+    input.recipient_account ?? null,
+    input.recipient_bank_code ?? null,
+    input.payer_account ?? null,
+    input.payer_bank_code ?? null,
+    now
+  );
+}
+
+export function listTenderHelpersPayments(params?: {
+  limit?: number;
+  recipient_account?: string | null;
+  recipient_bank_code?: string | null;
+}): TenderHelpersPayment[] {
+  const db = getDb();
+  const limit = params?.limit ?? 20;
+  const filters: string[] = [];
+  const values: Array<string | number> = [];
+
+  if (params?.recipient_account) {
+    filters.push('recipient_account = ?');
+    values.push(params.recipient_account);
+  }
+  if (params?.recipient_bank_code) {
+    filters.push('recipient_bank_code = ?');
+    values.push(params.recipient_bank_code);
+  }
+
+  const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+  const rows = db
+    .prepare(
+      `SELECT id, service_pay_key, status, amount, purpose, recipient_account, recipient_bank_code,
+              payer_account, payer_bank_code, created_at
+       FROM tender_helpers_payments
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT ?`
+    )
+    .all(...values, limit) as TenderHelpersPayment[];
+
+  return rows;
 }

@@ -193,6 +193,40 @@ function ensureSchema(database: Database.Database) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tender_helpers_payers_default
       ON tender_helpers_payers (is_default)
       WHERE is_default = 1;
+
+    CREATE TABLE IF NOT EXISTS tender_helpers_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_pay_key TEXT,
+      status TEXT,
+      amount REAL,
+      purpose TEXT,
+      recipient_account TEXT,
+      recipient_bank_code TEXT,
+      payer_account TEXT,
+      payer_bank_code TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tender_helpers_payments_created_at
+      ON tender_helpers_payments (created_at DESC);
+
+    -- ============ PAYMENTS CACHE ============
+
+    CREATE TABLE IF NOT EXISTS payments_cache (
+      layer TEXT NOT NULL,
+      payment_id TEXT NOT NULL,
+      incoming INTEGER,
+      payer_account TEXT,
+      payer_bank_code TEXT,
+      recipient_account TEXT,
+      recipient_bank_code TEXT,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      PRIMARY KEY (layer, payment_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payments_cache_layer_last_seen
+      ON payments_cache (layer, last_seen_at DESC);
   `);
 }
 

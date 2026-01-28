@@ -46,6 +46,14 @@ interface VendingMachine {
   };
 }
 
+interface ContractOfferDocument {
+  document_id: string;
+  document_number?: string;
+  document_date?: string;
+  success_added?: boolean;
+  success_added_desc?: string;
+}
+
 const mapLegalType = (value?: string) => {
   if (value === 'F') return 'fl';
   if (value === 'I') return 'ip';
@@ -99,6 +107,9 @@ export default function BeneficiaryDetailPage() {
     updateBeneficiaryUL,
     updateBeneficiaryIP,
     updateBeneficiaryFL,
+    listDocuments,
+    getDocument,
+    uploadDocumentBeneficiary,
   } = useCyclops({ layer });
 
   const [beneficiary, setBeneficiary] = useState<Beneficiary | null>(null);
@@ -150,6 +161,21 @@ export default function BeneficiaryDetailPage() {
   const [isDocsSubmitting, setIsDocsSubmitting] = useState(false);
   const [docsMessage, setDocsMessage] = useState<string | null>(null);
 
+  const [offerDocument, setOfferDocument] = useState<ContractOfferDocument | null>(null);
+  const [isOfferDocumentLoading, setIsOfferDocumentLoading] = useState(true);
+  const [offerDocumentError, setOfferDocumentError] = useState<string | null>(null);
+  const [offerFile, setOfferFile] = useState<File | null>(null);
+  const [offerFileError, setOfferFileError] = useState<string | null>(null);
+  const [offerUploadMessage, setOfferUploadMessage] = useState<string | null>(null);
+  const [isOfferUploading, setIsOfferUploading] = useState(false);
+  const [offerUploadEnabled, setOfferUploadEnabled] = useState(false);
+  const [isOfferStatusRefreshing, setIsOfferStatusRefreshing] = useState(false);
+  const [offerMeta, setOfferMeta] = useState({
+    document_number: '',
+    document_date: '',
+  });
+  const offerDocumentRef = useRef<ContractOfferDocument | null>(null);
+
   const [passportDoc, setPassportDoc] = useState({
     series: '',
     number: '',
@@ -170,12 +196,57 @@ export default function BeneficiaryDetailPage() {
 
   const digitsOnly = (value: string) => value.replace(/\D+/g, '');
   const minAddressLength = 15;
+  const maxOfferFileSize = 10 * 1024 * 1024;
+  const offerMimeTypes = new Set(['application/pdf', 'image/png', 'image/jpeg']);
+  const offerExtensions = new Set(['pdf', 'png', 'jpg', 'jpeg']);
+  const offerStatusRefreshWindowMs = 5 * 60 * 1000;
+  const offerStatusChecksRef = useRef(new Map<string, number>());
 
   const formatDateSafe = (value?: string | null) => {
     if (!value) return '—';
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU');
   };
+
+  const getFileExtension = (name: string) => {
+    const match = name.toLowerCase().match(/\.([a-z0-9]+)$/);
+    return match ? match[1] : '';
+  };
+
+  const validateOfferFile = (file: File) => {
+    if (!file) return 'Выберите файл';
+    if (file.size > maxOfferFileSize) {
+      return 'Размер файла не должен превышать 10 МБ';
+    }
+    const extension = getFileExtension(file.name);
+    if (!offerExtensions.has(extension) && !offerMimeTypes.has(file.type)) {
+      return 'Допустимые форматы: PDF, PNG, JPG';
+    }
+    return null;
+  };
+
+  const extractDocumentId = (record?: Record<string, unknown> | null) => {
+    if (!record) return '';
+    const raw = record.document_id ?? record.id;
+    if (typeof raw === 'string') return raw;
+    if (typeof raw === 'number') return String(raw);
+    return '';
+  };
+
+  const formatRemainingMs = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes <= 0) return `${seconds} сек.`;
+    return seconds > 0 ? `${minutes} мин. ${seconds} сек.` : `${minutes} мин.`;
+  };
+
+  const canRefreshOfferStatus = useCallback((documentId: string, force?: boolean) => {
+    if (force) return true;
+    const lastChecked = offerStatusChecksRef.current.get(documentId);
+    if (!lastChecked) return true;
+    return Date.now() - lastChecked >= offerStatusRefreshWindowMs;
+  }, [offerStatusRefreshWindowMs]);
 
   const clearDocError = (field: string) => {
     setDocErrors((prev) => {
@@ -326,6 +397,205 @@ export default function BeneficiaryDetailPage() {
     return Object.keys(errors).length === 0;
   };
 
+  const buildOfferDocument = (
+    documentId: string,
+    detailRecord?: Record<string, unknown> | null,
+    listRecord?: Record<string, unknown> | null
+  ): ContractOfferDocument => {
+    const detail = detailRecord || {};
+    const list = listRecord || {};
+    const document_number = typeof detail.document_number === 'string'
+      ? detail.document_number
+      : typeof list.document_number === 'string'
+        ? list.document_number
+        : undefined;
+    const document_date = typeof detail.document_date === 'string'
+      ? detail.document_date
+      : typeof list.document_date === 'string'
+        ? list.document_date
+        : undefined;
+    const success_added = typeof detail.success_added === 'boolean'
+      ? detail.success_added
+      : typeof list.success_added === 'boolean'
+        ? list.success_added
+        : undefined;
+    const success_added_desc = typeof detail.success_added_desc === 'string'
+      ? detail.success_added_desc
+      : typeof list.success_added_desc === 'string'
+        ? list.success_added_desc
+        : undefined;
+
+    return {
+      document_id: documentId,
+      document_number,
+      document_date,
+      success_added,
+      success_added_desc,
+    };
+  };
+
+  const loadOfferDocument = useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
+    if (inFlight.current.has('contract_offer')) return;
+    inFlight.current.add('contract_offer');
+    if (!beneficiary_id || beneficiary_id === 'undefined') {
+      setIsOfferDocumentLoading(false);
+      inFlight.current.delete('contract_offer');
+      return;
+    }
+    if (!options?.silent) {
+      setIsOfferDocumentLoading(true);
+    }
+    setOfferDocumentError(null);
+
+    try {
+      const response = await listDocuments({
+        page: 1,
+        per_page: 100,
+        filters: {
+          beneficiary: { id: beneficiary_id },
+          type: 'contract_offer',
+        },
+      });
+      const listResult = response.result?.documents ?? response.result;
+      const list = Array.isArray(listResult) ? listResult : [];
+      const first = list.length > 0 ? list[0] : null;
+      const listRecord = first && typeof first === 'object' ? (first as Record<string, unknown>) : null;
+      const documentId = typeof first === 'string' ? first : extractDocumentId(listRecord);
+
+      const currentOffer = offerDocumentRef.current;
+      if (!documentId) {
+        if (!currentOffer) {
+          setOfferDocument(null);
+          setOfferUploadEnabled(true);
+        } else {
+          setOfferUploadEnabled(false);
+        }
+        return;
+      }
+
+      if (!canRefreshOfferStatus(documentId, options?.force)) {
+        if (!currentOffer || currentOffer.document_id !== documentId) {
+          setOfferDocument(buildOfferDocument(documentId, null, listRecord));
+        }
+        setOfferUploadEnabled(false);
+        return;
+      }
+
+      const detailsResponse = await getDocument(documentId);
+      const detailsPayload = (detailsResponse.result as { document?: unknown } | undefined)?.document ?? detailsResponse.result;
+      const detailRecord = detailsPayload && typeof detailsPayload === 'object'
+        ? (detailsPayload as Record<string, unknown>)
+        : null;
+      setOfferDocument(buildOfferDocument(documentId, detailRecord, listRecord));
+      offerStatusChecksRef.current.set(documentId, Date.now());
+      setOfferUploadEnabled(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось получить документы';
+      setOfferDocumentError(message);
+    } finally {
+      setIsOfferDocumentLoading(false);
+      inFlight.current.delete('contract_offer');
+    }
+  }, [beneficiary_id, listDocuments, getDocument, canRefreshOfferStatus]);
+
+  const refreshOfferStatus = useCallback(async () => {
+    if (!offerDocument?.document_id) {
+      await loadOfferDocument({ silent: true, force: true });
+      return;
+    }
+    if (!canRefreshOfferStatus(offerDocument.document_id)) {
+      return;
+    }
+    if (inFlight.current.has('contract_offer_status')) return;
+    inFlight.current.add('contract_offer_status');
+    setIsOfferStatusRefreshing(true);
+    setOfferDocumentError(null);
+    try {
+      const detailsResponse = await getDocument(offerDocument.document_id);
+      const detailsPayload = (detailsResponse.result as { document?: unknown } | undefined)?.document ?? detailsResponse.result;
+      const detailRecord = detailsPayload && typeof detailsPayload === 'object'
+        ? (detailsPayload as Record<string, unknown>)
+        : null;
+      setOfferDocument((prev) => prev ? buildOfferDocument(prev.document_id, detailRecord, null) : null);
+      offerStatusChecksRef.current.set(offerDocument.document_id, Date.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось обновить статус';
+      setOfferDocumentError(message);
+    } finally {
+      setIsOfferStatusRefreshing(false);
+      inFlight.current.delete('contract_offer_status');
+    }
+  }, [offerDocument, getDocument, loadOfferDocument, canRefreshOfferStatus]);
+
+  const handleOfferFileChange = (file: File | null) => {
+    setOfferFile(file);
+    setOfferUploadMessage(null);
+    const validationError = file ? validateOfferFile(file) : null;
+    setOfferFileError(validationError);
+  };
+
+  const handleOfferUpload = async () => {
+    if (!beneficiary_id || beneficiary_id === 'undefined') return;
+    if (!offerUploadEnabled) {
+      setOfferFileError('Загрузка недоступна, используйте кнопку "Загрузить новую версию"');
+      return;
+    }
+    setOfferUploadMessage(null);
+
+    if (!offerFile) {
+      setOfferFileError('Выберите файл');
+      return;
+    }
+    const validationError = validateOfferFile(offerFile);
+    if (validationError) {
+      setOfferFileError(validationError);
+      return;
+    }
+
+    setIsOfferUploading(true);
+    try {
+      const result = await uploadDocumentBeneficiary({
+        beneficiary_id,
+        document_type: 'contract_offer',
+        file: offerFile,
+        document_date: offerMeta.document_date || undefined,
+        document_number: offerMeta.document_number || undefined,
+      });
+
+      const documentId = typeof result?.document_id === 'string'
+        ? result.document_id
+        : typeof (result as { id?: unknown } | undefined)?.id === 'string'
+          ? (result as { id?: string }).id!
+          : '';
+      const successAdded = typeof result?.success_added === 'boolean' ? result.success_added : undefined;
+      const successDesc = typeof result?.success_added_desc === 'string' ? result.success_added_desc : undefined;
+      const baseMessage = successAdded === false
+        ? 'Документ отправлен в обработку'
+        : 'Документ загружен';
+      setOfferUploadMessage(successDesc ? `${baseMessage}. ${successDesc}` : baseMessage);
+      setOfferUploadEnabled(false);
+      setOfferFile(null);
+      setOfferFileError(null);
+
+      if (documentId) {
+        setOfferDocument({
+          document_id: documentId,
+          success_added: successAdded,
+          success_added_desc: successDesc,
+        });
+      }
+
+      window.setTimeout(() => {
+        loadOfferDocument({ silent: true });
+      }, 1500);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ошибка при загрузке документа';
+      setOfferUploadMessage(message);
+    } finally {
+      setIsOfferUploading(false);
+    }
+  };
+
   const handleDocumentsSubmit = async () => {
     if (!beneficiary_id || beneficiary_id === 'undefined') return;
     setDocsMessage(null);
@@ -468,6 +738,10 @@ export default function BeneficiaryDetailPage() {
   };
 
   useEffect(() => {
+    offerDocumentRef.current = offerDocument;
+  }, [offerDocument]);
+
+  useEffect(() => {
     if (!beneficiary) return;
     if (updateInitializedFor.current === beneficiary.beneficiary_id) return;
 
@@ -606,9 +880,10 @@ export default function BeneficiaryDetailPage() {
 
   useEffect(() => {
     loadBeneficiary();
+    loadOfferDocument();
     loadMachines();
     loadAvailableMachines();
-  }, [loadBeneficiary, loadMachines, loadAvailableMachines]);
+  }, [loadBeneficiary, loadOfferDocument, loadMachines, loadAvailableMachines]);
 
   const getBeneficiaryName = () => {
     if (!beneficiary) return '';
@@ -627,6 +902,22 @@ export default function BeneficiaryDetailPage() {
       default: return type;
     }
   };
+
+  const offerStatus = offerDocument
+    ? offerDocument.success_added === false
+      ? { label: 'В обработке', className: 'badge-warning' }
+      : { label: 'Загружен', className: 'badge-success' }
+    : { label: 'Не загружен', className: 'badge-neutral' };
+  const offerMetaLabel = [
+    offerDocument?.document_number ? `№ ${offerDocument.document_number}` : null,
+    offerDocument?.document_date ? `от ${formatDateSafe(offerDocument.document_date)}` : null,
+  ].filter(Boolean).join(' ');
+  const offerRefreshRemainingMs = offerDocument?.document_id
+    ? Math.max(
+      0,
+      offerStatusRefreshWindowMs - (Date.now() - (offerStatusChecksRef.current.get(offerDocument.document_id) || 0))
+    )
+    : 0;
 
   if (isLoading) {
     return (
@@ -753,6 +1044,166 @@ export default function BeneficiaryDetailPage() {
                 </span>
               </div>
             </div>
+          </div>
+
+          <div className="card documents-card">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">Документы</h2>
+                <p className="page-description" style={{ marginBottom: 0 }}>
+                  Для идентификации платежей нужен договор оферты.
+                </p>
+              </div>
+              {offerDocument && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={refreshOfferStatus}
+                  disabled={isOfferStatusRefreshing || offerRefreshRemainingMs > 0}
+                  title={offerRefreshRemainingMs > 0
+                    ? `Доступно через ${formatRemainingMs(offerRefreshRemainingMs)}`
+                    : 'Обновить статус'}
+                >
+                  {isOfferStatusRefreshing ? (
+                    <>
+                      <span className="spinner" />
+                      Обновление...
+                    </>
+                  ) : (
+                    'Обновить статус'
+                  )}
+                </button>
+              )}
+            </div>
+
+            {isOfferDocumentLoading ? (
+              <div className="doc-skeleton">
+                <div className="skeleton-line" />
+                <div className="skeleton-line short" />
+                <div className="skeleton-line" />
+              </div>
+            ) : offerDocumentError ? (
+              <div className="doc-error">
+                <p>Не удалось получить документы</p>
+                <button className="btn btn-secondary btn-sm" onClick={() => loadOfferDocument()}>
+                  Повторить
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="offer-document-row">
+                  <div className="offer-document-main">
+                    <div className="offer-document-title">Договор оферты</div>
+                    <div className="offer-document-meta">
+                      <span className={`badge ${offerStatus.className}`}>{offerStatus.label}</span>
+                      {offerMetaLabel && <span className="offer-document-meta-text">{offerMetaLabel}</span>}
+                    </div>
+                    {!offerDocument && (
+                      <div className="offer-document-empty">Документ не загружен</div>
+                    )}
+                    {offerDocument?.success_added_desc && (
+                      <div className="offer-document-desc" title={offerDocument.success_added_desc}>
+                        {offerDocument.success_added_desc}
+                      </div>
+                    )}
+                    {offerDocument?.document_id && offerRefreshRemainingMs > 0 && (
+                      <div className="offer-document-desc">
+                        Обновление доступно через {formatRemainingMs(offerRefreshRemainingMs)}.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="offer-upload">
+                  <div className="form-row form-row-2">
+                    <div className="form-group">
+                      <label className="form-label">Номер документа (опционально)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={offerMeta.document_number}
+                        onChange={(e) => setOfferMeta({ ...offerMeta, document_number: e.target.value })}
+                        disabled={!offerUploadEnabled}
+                        placeholder="Например, 1101"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Дата документа (опционально)</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={offerMeta.document_date}
+                        onChange={(e) => setOfferMeta({ ...offerMeta, document_date: e.target.value })}
+                        disabled={!offerUploadEnabled}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Файл</label>
+                    <input
+                      type="file"
+                      className="form-input"
+                      accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                      onChange={(e) => handleOfferFileChange(e.target.files?.[0] || null)}
+                      disabled={!offerUploadEnabled}
+                    />
+                    {offerFile && <div className="file-name">{offerFile.name}</div>}
+                    {offerFileError && <span className="form-error">{offerFileError}</span>}
+                    <span className="form-hint">Подписанный договор оферты</span>
+                  </div>
+
+                  {offerUploadMessage && (
+                    <div className="form-hint" style={{ marginTop: 8 }}>
+                      {offerUploadMessage}
+                    </div>
+                  )}
+
+                  <div className="form-actions offer-actions">
+                    {offerDocument && !offerUploadEnabled && (
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setOfferUploadEnabled(true);
+                          setOfferFile(null);
+                          setOfferFileError(null);
+                          setOfferUploadMessage(null);
+                        }}
+                      >
+                        Загрузить новую версию
+                      </button>
+                    )}
+                    {offerDocument && offerUploadEnabled && (
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setOfferUploadEnabled(false);
+                          setOfferFile(null);
+                          setOfferFileError(null);
+                          setOfferUploadMessage(null);
+                        }}
+                      >
+                        Отмена
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleOfferUpload}
+                      disabled={!offerUploadEnabled || isOfferUploading || !offerFile || !!offerFileError}
+                    >
+                      {isOfferUploading ? (
+                        <>
+                          <span className="spinner" />
+                          Загрузка...
+                        </>
+                      ) : offerDocument ? (
+                        'Загрузить новую версию'
+                      ) : (
+                        'Загрузить договор оферты'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="card update-card">
@@ -1516,6 +1967,106 @@ export default function BeneficiaryDetailPage() {
           margin-top: 24px;
         }
 
+        .offer-document-row {
+          padding: 8px 0 16px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .offer-document-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .offer-document-meta {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
+        .offer-document-meta-text {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .offer-document-empty {
+          margin-top: 8px;
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .offer-document-desc {
+          margin-top: 8px;
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .offer-upload {
+          padding-top: 16px;
+        }
+
+        .offer-actions {
+          justify-content: space-between;
+          flex-wrap: wrap;
+        }
+
+        .file-name {
+          margin-top: 6px;
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .doc-skeleton {
+          padding: 24px 0;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .skeleton-line {
+          height: 12px;
+          border-radius: 6px;
+          background: linear-gradient(
+            90deg,
+            var(--bg-tertiary) 0%,
+            rgba(255, 255, 255, 0.35) 50%,
+            var(--bg-tertiary) 100%
+          );
+          background-size: 200% 100%;
+          animation: shimmer 1.4s ease-in-out infinite;
+        }
+
+        .skeleton-line.short {
+          width: 60%;
+        }
+
+        .doc-error {
+          padding: 16px;
+          background: var(--color-error-bg, rgba(239, 68, 68, 0.1));
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .doc-error p {
+          margin: 0;
+          color: var(--color-error, #ef4444);
+          font-size: 14px;
+        }
+
+        @keyframes shimmer {
+          0% {
+            background-position: 0% 50%;
+          }
+          100% {
+            background-position: 100% 50%;
+          }
+        }
+
         .document-section {
           padding: 16px 0;
           border-top: 1px solid var(--border-color);
@@ -1535,6 +2086,10 @@ export default function BeneficiaryDetailPage() {
 
         .form-row-3 {
           grid-template-columns: repeat(3, 1fr);
+        }
+
+        .form-row-2 {
+          grid-template-columns: repeat(2, 1fr);
         }
 
         .form-actions {
@@ -1589,12 +2144,20 @@ export default function BeneficiaryDetailPage() {
             grid-template-columns: 1fr;
           }
 
+          .form-row-2 {
+            grid-template-columns: 1fr;
+          }
+
           .form-actions {
             justify-content: stretch;
           }
 
           .form-actions .btn {
             width: 100%;
+          }
+
+          .offer-actions {
+            gap: 8px;
           }
         }
       `}</style>

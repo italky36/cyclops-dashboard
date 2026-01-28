@@ -19,12 +19,26 @@ export function RateLimitBadge({
 
   useEffect(() => {
     if (!nextAllowedAt) {
+      if (typeof cacheAgeSeconds === 'number') {
+        const ttlSeconds = 300;
+        const baseRemaining = Math.max(0, ttlSeconds - cacheAgeSeconds);
+        const startTime = Date.now();
+        const tick = () => {
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          const remaining = Math.max(0, baseRemaining - elapsed);
+          setRemainingSeconds(remaining > 0 ? remaining : null);
+        };
+        tick();
+        const interval = setInterval(tick, 1000);
+        return () => clearInterval(interval);
+      }
       setRemainingSeconds(null);
       return;
     }
 
     const updateRemaining = () => {
-      const diff = new Date(nextAllowedAt).getTime() - Date.now();
+      const target = new Date(nextAllowedAt).getTime();
+      const diff = target - Date.now();
       setRemainingSeconds(diff > 0 ? Math.ceil(diff / 1000) : null);
     };
 
@@ -32,7 +46,7 @@ export function RateLimitBadge({
     const interval = setInterval(updateRemaining, 1000);
 
     return () => clearInterval(interval);
-  }, [nextAllowedAt]);
+  }, [nextAllowedAt, cacheAgeSeconds]);
 
   if (!cached && !remainingSeconds) {
     return null;
@@ -46,12 +60,15 @@ export function RateLimitBadge({
 
   if (compact) {
     return (
-      <span className="rate-limit-badge compact" title={`Данные из кэша. Обновление через ${remainingSeconds ? formatTime(remainingSeconds) : '...'}`}>
+      <span
+        className="rate-limit-badge compact"
+        title={`Данные из кэша. Обновление через ${remainingSeconds ? formatTime(remainingSeconds) : '—'}`}
+      >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="12" cy="12" r="10" />
           <polyline points="12 6 12 12 16 14" />
         </svg>
-        {remainingSeconds ? formatTime(remainingSeconds) : '...'}
+        {remainingSeconds ? formatTime(remainingSeconds) : cacheAgeSeconds ? `${cacheAgeSeconds}s` : '—'}
 
         <style jsx>{`
           .rate-limit-badge.compact {
@@ -148,7 +165,8 @@ export function RefreshButton({
     }
 
     const updateRemaining = () => {
-      const diff = new Date(nextAllowedAt).getTime() - Date.now();
+      const target = new Date(nextAllowedAt).getTime();
+      const diff = target - Date.now();
       setRemainingSeconds(diff > 0 ? Math.ceil(diff / 1000) : null);
     };
 
