@@ -185,11 +185,164 @@ export interface CreateVirtualAccountParams {
 
 export interface ListVirtualAccountsResult {
   virtual_accounts: string[];
+  meta?: {
+    total?: number;
+    page?: {
+      current_page?: number;
+      per_page?: number;
+    };
+  };
 }
 
 export interface GetVirtualAccountResult {
   virtual_account: VirtualAccount;
 }
+
+// Virtual Transaction Types
+export type OperationType =
+  | 'cash_add'
+  | 'block_add'
+  | 'block_add_from_cash'
+  | 'cash_add_from_block'
+  | 'block_write_off'
+  | 'cash_write_off';
+
+export interface VirtualTransaction {
+  id: string;
+  virtual_account: string;
+  amount: number;
+  operation_type: OperationType;
+  deal_id?: string;
+  payment_id?: string;
+  created_at: string;
+  incoming: boolean;
+  description?: string;
+}
+
+export interface ListVirtualTransactionsParams {
+  page?: number;
+  per_page?: number;
+  filters: {
+    virtual_account?: string;
+    deal_id?: string;
+    payment_id?: string;
+    created_date_from?: string;
+    created_date_to?: string;
+    incoming?: boolean;
+    operation_type?: OperationType;
+    include_block_operations?: boolean;
+  };
+}
+
+export interface ListVirtualTransactionsResult {
+  virtual_transactions: VirtualTransaction[];
+  total_payouts: number;
+  count_payouts: number;
+  total_receipts: number;
+  count_receipts: number;
+  meta?: {
+    total?: number;
+    page?: {
+      current_page?: number;
+      per_page?: number;
+    };
+  };
+}
+
+// Refund Types
+export interface RefundRecipient {
+  amount: number;
+  account: string;
+  bank_code: string;
+  name: string;
+  inn?: string;
+  kpp?: string;
+  document_number?: string;
+}
+
+export interface RefundVirtualAccountParams {
+  virtual_account: string;
+  recipient: RefundRecipient;
+  purpose?: string;
+  ext_key?: string;
+  identifier?: string;
+}
+
+export interface RefundVirtualAccountResult {
+  payment_id: string;
+}
+
+// Transfer Types
+export interface TransferBetweenAccountsParams {
+  from_virtual_account: string;
+  to_virtual_account: string;
+  amount: number;
+}
+
+export interface TransferBetweenAccountsResult {
+  success: boolean;
+  transfer_id: string;
+}
+
+export type TransferStatus = 'PROCESSING' | 'SUCCESS' | 'CANCELED';
+
+export interface TransferBetweenAccountsV2Params {
+  from_virtual_account: string;
+  to_virtual_account: string;
+  amount: number;
+  purpose?: string;
+  ext_key?: string;
+}
+
+export interface TransferBetweenAccountsV2Result {
+  transfer_id: string;
+  status: TransferStatus;
+}
+
+export interface GetVirtualAccountsTransferResult {
+  id: string;
+  status: TransferStatus;
+  amount: number;
+  from_virtual_account: string;
+  to_virtual_account: string;
+  payment_id?: string;
+}
+
+// Cyclops Error Types
+export interface CyclopsError {
+  code: number;
+  message: string;
+  data?: unknown;
+  meta?: unknown;
+}
+
+// Коды ошибок Cyclops
+export const CYCLOPS_ERROR_CODES = {
+  BENEFICIARY_NOT_FOUND: 4409,
+  BENEFICIARY_NOT_ACTIVE: 4410,
+  VIRTUAL_ACCOUNT_NOT_FOUND: 4411,
+  INSUFFICIENT_FUNDS: 4415,
+  DOCUMENT_NOT_FOUND: 4406,
+  INCORRECT_VO_CODES: 4451,
+  RESTRICTIONS_IMPOSED: 4558,
+  IDEMPOTENT_REQUEST_IN_PROCESS: 4909,
+  TRANSFER_NOT_FOUND: 4905,
+} as const;
+
+export type CyclopsErrorCode = typeof CYCLOPS_ERROR_CODES[keyof typeof CYCLOPS_ERROR_CODES];
+
+// Человекочитаемые сообщения для кодов ошибок
+export const CYCLOPS_ERROR_MESSAGES: Record<number, string> = {
+  [CYCLOPS_ERROR_CODES.BENEFICIARY_NOT_FOUND]: 'Бенефициар не найден',
+  [CYCLOPS_ERROR_CODES.BENEFICIARY_NOT_ACTIVE]: 'Бенефициар не активен',
+  [CYCLOPS_ERROR_CODES.VIRTUAL_ACCOUNT_NOT_FOUND]: 'Виртуальный счёт не найден',
+  [CYCLOPS_ERROR_CODES.INSUFFICIENT_FUNDS]: 'Недостаточно средств на виртуальном счёте',
+  [CYCLOPS_ERROR_CODES.DOCUMENT_NOT_FOUND]: 'Документ не найден',
+  [CYCLOPS_ERROR_CODES.INCORRECT_VO_CODES]: 'Некорректные или отсутствующие коды VO для платежа нерезиденту',
+  [CYCLOPS_ERROR_CODES.RESTRICTIONS_IMPOSED]: 'Наложены ограничения (исполнительное производство)',
+  [CYCLOPS_ERROR_CODES.IDEMPOTENT_REQUEST_IN_PROCESS]: 'Запрос с таким ext_key уже обрабатывается',
+  [CYCLOPS_ERROR_CODES.TRANSFER_NOT_FOUND]: 'Перевод между номинальными счетами не найден',
+};
 
 // Deal Types
 export type RecipientType = 

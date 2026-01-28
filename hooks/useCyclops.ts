@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import type {
   Layer,
   JsonRpcResponse,
@@ -8,17 +9,40 @@ import type {
   GetBeneficiaryResult,
   ListVirtualAccountsResult,
   GetVirtualAccountResult,
+  ListVirtualTransactionsResult,
+  RefundVirtualAccountResult,
+  TransferBetweenAccountsResult,
+  TransferBetweenAccountsV2Result,
+  GetVirtualAccountsTransferResult,
+  OperationType,
+  CYCLOPS_ERROR_CODES,
 } from '@/types/cyclops';
 
 interface UseCyclopsOptions {
   layer: Layer;
 }
 
+interface CacheInfo {
+  cached: boolean;
+  cachedAt?: string;
+  expiresAt?: string;
+  remainingMs?: number;
+}
+
+interface ErrorInfo {
+  userMessage: string;
+  isRetryable: boolean;
+  isIdempotentInProcess: boolean;
+}
+
 interface CyclopsState {
   loading: boolean;
   error: string | null;
+  errorInfo: ErrorInfo | null;
+  cacheInfo: CacheInfo | null;
 }
 
+// Глобальный кеш и дедупликация на клиенте
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const requestCache = new Map<
   string,
@@ -28,6 +52,9 @@ const requestCache = new Map<
   }
 >();
 
+// Хранилище ext_key для идемпотентных операций (per session)
+const idempotencyKeys = new Map<string, string>();
+
 const clearCacheByPrefix = (prefix: string) => {
   Array.from(requestCache.keys()).forEach((key) => {
     if (key.startsWith(prefix)) {
@@ -36,17 +63,41 @@ const clearCacheByPrefix = (prefix: string) => {
   });
 };
 
+/**
+ * Генерирует или возвращает существующий ext_key для идемпотентной операции
+ */
+function getOrCreateExtKey(operationKey: string): string {
+  let extKey = idempotencyKeys.get(operationKey);
+  if (!extKey) {
+    extKey = uuidv4();
+    idempotencyKeys.set(operationKey, extKey);
+  }
+  return extKey;
+}
+
+/**
+ * Очищает ext_key после успешной операции
+ */
+function clearExtKey(operationKey: string): void {
+  idempotencyKeys.delete(operationKey);
+}
+
 export function useCyclops({ layer }: UseCyclopsOptions) {
   const [state, setState] = useState<CyclopsState>({
     loading: false,
     error: null,
+    errorInfo: null,
+    cacheInfo: null,
   });
+
+  // Ref для отслеживания активных запросов
+  const activeRequests = useRef(new Set<string>());
 
   const call = useCallback(async <T = unknown>(
     method: string,
     params?: Record<string, unknown>
-  ): Promise<JsonRpcResponse<T>> => {
-    setState({ loading: true, error: null });
+  ): Promise<JsonRpcResponse<T> & { _cache?: CacheInfo; _errorInfo?: ErrorInfo }> => {
+    setState({ loading: true, error: null, errorInfo: null, cacheInfo: null });
 
     try {
       const cacheableMethods = new Set([
@@ -60,13 +111,18 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
         ? `${method}:${layer}:${JSON.stringify(params || {})}`
         : null;
 
+      // Проверяем клиентский кеш
       if (cacheKey) {
         const cached = requestCache.get(cacheKey);
         const now = Date.now();
         if (cached && cached.expiresAt > now) {
           const data = await cached.promise;
-          setState({ loading: false, error: null });
-          return data as JsonRpcResponse<T>;
+          const cacheInfo: CacheInfo = {
+            cached: true,
+            remainingMs: cached.expiresAt - now,
+          };
+          setState({ loading: false, error: null, errorInfo: null, cacheInfo });
+          return { ...(data as JsonRpcResponse<T>), _cache: cacheInfo };
         }
       }
 
@@ -84,7 +140,9 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
         }
 
         if (data.error) {
-          throw new Error(data.error.message || JSON.stringify(data.error));
+          const error = new Error(data._errorInfo?.userMessage || data.error.message || JSON.stringify(data.error));
+          (error as Error & { errorInfo?: ErrorInfo }).errorInfo = data._errorInfo;
+          throw error;
         }
 
         return data as JsonRpcResponse<T>;
@@ -98,23 +156,27 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
       }
 
       const data = await requestPromise;
-      setState({ loading: false, error: null });
-      return data as JsonRpcResponse<T>;
+      const dataWithCache = data as JsonRpcResponse<T> & { _cache?: CacheInfo };
+      const cacheInfo = dataWithCache._cache;
+      setState({ loading: false, error: null, errorInfo: null, cacheInfo: cacheInfo || null });
+      return dataWithCache;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      setState({ loading: false, error: message });
-      if (error instanceof Error) {
-        // Drop cached failures so next attempt can retry
-        if (method === 'list_beneficiary' || method === 'get_beneficiary' || method === 'list_virtual_account' || method === 'get_virtual_account' || method === 'list_virtual_transaction') {
-          const cacheKey = `${method}:${layer}:${JSON.stringify(params || {})}`;
-          requestCache.delete(cacheKey);
-        }
+      const errorInfo = (error as Error & { errorInfo?: ErrorInfo })?.errorInfo || null;
+      setState({ loading: false, error: message, errorInfo, cacheInfo: null });
+
+      // Удаляем из кеша при ошибке
+      const cacheableMethods = ['list_beneficiary', 'get_beneficiary', 'list_virtual_account', 'get_virtual_account', 'list_virtual_transaction'];
+      if (cacheableMethods.includes(method)) {
+        const cacheKey = `${method}:${layer}:${JSON.stringify(params || {})}`;
+        requestCache.delete(cacheKey);
       }
       throw error;
     }
   }, [layer]);
 
-  // Бенефициары
+  // ==================== БЕНЕФИЦИАРЫ ====================
+
   const createBeneficiaryUL = useCallback(
     async (params: {
       inn: string;
@@ -196,23 +258,37 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   );
 
   const activateBeneficiary = useCallback(
-    (beneficiary_id: string) => call('activate_beneficiary', { beneficiary_id }),
-    [call]
+    async (beneficiary_id: string) => {
+      const result = await call('activate_beneficiary', { beneficiary_id });
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      clearCacheByPrefix(`get_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
   );
 
   const deactivateBeneficiary = useCallback(
-    (beneficiary_id: string) => call('deactivate_beneficiary', { beneficiary_id }),
-    [call]
+    async (beneficiary_id: string) => {
+      const result = await call('deactivate_beneficiary', { beneficiary_id });
+      clearCacheByPrefix(`list_beneficiary:${layer}:`);
+      clearCacheByPrefix(`get_beneficiary:${layer}:`);
+      return result;
+    },
+    [call, layer]
   );
 
-  // Виртуальные счета
+  // ==================== ВИРТУАЛЬНЫЕ СЧЕТА ====================
+
   const createVirtualAccount = useCallback(
-    (params: { beneficiary_id: string; type: 'standard' | 'for_ndfl' }) =>
-      call('create_virtual_account', {
+    async (params: { beneficiary_id: string; type: 'standard' | 'for_ndfl' }) => {
+      const result = await call('create_virtual_account', {
         beneficiary_id: params.beneficiary_id,
         virtual_account_type: params.type,
-      }),
-    [call]
+      });
+      clearCacheByPrefix(`list_virtual_account:${layer}:`);
+      return result;
+    },
+    [call, layer]
   );
 
   const getVirtualAccount = useCallback(
@@ -222,42 +298,162 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
   );
 
   const listVirtualAccounts = useCallback(
-    (filters?: {
-      beneficiary?: {
-        id?: string;
-        is_active?: boolean;
-        legal_type?: 'F' | 'I' | 'J';
-        inn?: string;
+    (params?: {
+      page?: number;
+      per_page?: number;
+      filters?: {
+        beneficiary?: {
+          id?: string;
+          is_active?: boolean;
+          legal_type?: 'F' | 'I' | 'J';
+          inn?: string;
+        };
+      };
+    }) => {
+      const requestParams: Record<string, unknown> = {
+        page: params?.page ?? 1,
+        per_page: params?.per_page ?? 100,
+      };
+      const beneficiary = params?.filters?.beneficiary;
+      if (beneficiary && Object.keys(beneficiary).length > 0) {
+        requestParams.filters = params?.filters;
+      }
+      return call<ListVirtualAccountsResult>('list_virtual_account', requestParams);
+    },
+    [call]
+  );
+
+  const listVirtualTransactions = useCallback(
+    (params: {
+      page?: number;
+      per_page?: number;
+      filters: {
+        virtual_account?: string;
+        deal_id?: string;
+        payment_id?: string;
+        created_date_from?: string;
+        created_date_to?: string;
+        incoming?: boolean;
+        operation_type?: OperationType;
+        include_block_operations?: boolean;
       };
     }) =>
-      call<ListVirtualAccountsResult>('list_virtual_account', (() => {
-        const beneficiary = filters?.beneficiary;
-        const hasBeneficiaryFilters = beneficiary && Object.keys(beneficiary).length > 0;
-        const params: Record<string, unknown> = {
-          page: 1,
-          per_page: 100,
-        };
-        if (hasBeneficiaryFilters) {
-          params.filters = filters;
-        }
-        return params;
-      })()),
+      call<ListVirtualTransactionsResult>('list_virtual_transaction', {
+        page: params.page ?? 1,
+        per_page: params.per_page ?? 100,
+        filters: params.filters,
+      }),
     [call]
   );
 
+  /**
+   * Вывод средств с виртуального счёта (с поддержкой идемпотентности)
+   */
   const refundVirtualAccount = useCallback(
-    (params: {
+    async (params: {
       virtual_account: string;
+      recipient: {
+        amount: number;
+        account: string;
+        bank_code: string;
+        name: string;
+        inn?: string;
+        kpp?: string;
+        document_number?: string;
+      };
+      purpose?: string;
+      ext_key?: string;
+      identifier?: string;
+    }) => {
+      // Генерируем ext_key для идемпотентности, если не передан
+      const operationKey = `refund:${params.virtual_account}:${params.recipient.amount}:${params.recipient.account}`;
+      const ext_key = params.ext_key || getOrCreateExtKey(operationKey);
+
+      try {
+        const result = await call<RefundVirtualAccountResult>('refund_virtual_account', {
+          ...params,
+          ext_key,
+        });
+        // Очищаем ext_key после успешного запроса
+        clearExtKey(operationKey);
+        clearCacheByPrefix(`get_virtual_account:${layer}:`);
+        clearCacheByPrefix(`list_virtual_transaction:${layer}:`);
+        return result;
+      } catch (error) {
+        // Не очищаем ext_key при ошибке 4909 (запрос в процессе)
+        const errorInfo = (error as Error & { errorInfo?: ErrorInfo })?.errorInfo;
+        if (!errorInfo?.isIdempotentInProcess) {
+          clearExtKey(operationKey);
+        }
+        throw error;
+      }
+    },
+    [call, layer]
+  );
+
+  /**
+   * Перевод между счетами (v1)
+   */
+  const transferBetweenVirtualAccounts = useCallback(
+    async (params: {
+      from_virtual_account: string;
+      to_virtual_account: string;
       amount: number;
-      account: string;
-      bank_code: string;
-      name: string;
-      inn: string;
-    }) => call('refund_virtual_account', params),
+    }) => {
+      const result = await call<TransferBetweenAccountsResult>('transfer_between_virtual_accounts', params);
+      clearCacheByPrefix(`get_virtual_account:${layer}:`);
+      clearCacheByPrefix(`list_virtual_transaction:${layer}:`);
+      return result;
+    },
+    [call, layer]
+  );
+
+  /**
+   * Перевод между счетами (v2, с идемпотентностью)
+   */
+  const transferBetweenVirtualAccountsV2 = useCallback(
+    async (params: {
+      from_virtual_account: string;
+      to_virtual_account: string;
+      amount: number;
+      purpose?: string;
+      ext_key?: string;
+    }) => {
+      // Генерируем ext_key для идемпотентности, если не передан
+      const operationKey = `transfer:${params.from_virtual_account}:${params.to_virtual_account}:${params.amount}`;
+      const ext_key = params.ext_key || getOrCreateExtKey(operationKey);
+
+      try {
+        const result = await call<TransferBetweenAccountsV2Result>('transfer_between_virtual_accounts_v2', {
+          ...params,
+          ext_key,
+        });
+        clearExtKey(operationKey);
+        clearCacheByPrefix(`get_virtual_account:${layer}:`);
+        clearCacheByPrefix(`list_virtual_transaction:${layer}:`);
+        return result;
+      } catch (error) {
+        const errorInfo = (error as Error & { errorInfo?: ErrorInfo })?.errorInfo;
+        if (!errorInfo?.isIdempotentInProcess) {
+          clearExtKey(operationKey);
+        }
+        throw error;
+      }
+    },
+    [call, layer]
+  );
+
+  /**
+   * Получение статуса перевода
+   */
+  const getVirtualAccountsTransfer = useCallback(
+    (transfer_id: string) =>
+      call<GetVirtualAccountsTransferResult>('get_virtual_accounts_transfer', { transfer_id }),
     [call]
   );
 
-  // Сделки
+  // ==================== СДЕЛКИ ====================
+
   const createDeal = useCallback(
     (params: {
       payers: Array<{ virtual_account: string; amount: number }>;
@@ -287,7 +483,8 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     [call]
   );
 
-  // Платежи
+  // ==================== ПЛАТЕЖИ ====================
+
   const listPayments = useCallback(
     (filters?: { type?: string; identified?: boolean }) =>
       call('list_payments_v2', filters),
@@ -307,7 +504,8 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     [call]
   );
 
-  // СБП
+  // ==================== СБП ====================
+
   const listBanksSBP = useCallback(() => call('list_bank_sbp'), [call]);
 
   const generateSBPQRCode = useCallback(
@@ -316,10 +514,28 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     [call]
   );
 
-  // Утилиты
+  // ==================== УТИЛИТЫ ====================
+
   const echo = useCallback(
     (text: string) => call('echo', { text }),
     [call]
+  );
+
+  /**
+   * Очищает весь клиентский кеш
+   */
+  const clearCache = useCallback(() => {
+    requestCache.clear();
+  }, []);
+
+  /**
+   * Очищает кеш для конкретного метода
+   */
+  const invalidateCache = useCallback(
+    (method: string) => {
+      clearCacheByPrefix(`${method}:${layer}:`);
+    },
+    [layer]
   );
 
   return {
@@ -337,7 +553,11 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     createVirtualAccount,
     getVirtualAccount,
     listVirtualAccounts,
+    listVirtualTransactions,
     refundVirtualAccount,
+    transferBetweenVirtualAccounts,
+    transferBetweenVirtualAccountsV2,
+    getVirtualAccountsTransfer,
     // Сделки
     createDeal,
     getDeal,
@@ -353,5 +573,7 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     generateSBPQRCode,
     // Утилиты
     echo,
+    clearCache,
+    invalidateCache,
   };
 }

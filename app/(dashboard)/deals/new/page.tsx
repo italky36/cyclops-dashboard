@@ -57,7 +57,7 @@ export default function NewDealPage() {
     const loadData = async () => {
       try {
         const [accountsRes, banksRes] = await Promise.all([
-          cyclops.listVirtualAccounts({ beneficiary: { is_active: true } }),
+          cyclops.listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
           cyclops.listBanksSBP(),
         ]);
 

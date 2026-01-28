@@ -230,52 +230,107 @@ export class CyclopsClient {
     return this.call('get_virtual_account', { virtual_account });
   }
 
-  async listVirtualAccounts(filters?: {
-    beneficiary?: {
-      id?: string;
-      is_active?: boolean;
-      legal_type?: 'F' | 'I' | 'J';
-      inn?: string;
+  async listVirtualAccounts(params?: {
+    page?: number;
+    per_page?: number;
+    filters?: {
+      beneficiary?: {
+        id?: string;
+        is_active?: boolean;
+        legal_type?: 'F' | 'I' | 'J';
+        inn?: string;
+      };
     };
   }) {
-    const beneficiary = filters?.beneficiary;
-    const hasBeneficiaryFilters = beneficiary && Object.keys(beneficiary).length > 0;
-    const params: Record<string, unknown> = {
-      page: 1,
-      per_page: 100,
+    const requestParams: Record<string, unknown> = {
+      page: params?.page ?? 1,
+      per_page: params?.per_page ?? 100,
     };
-    if (hasBeneficiaryFilters) {
-      params.filters = filters;
+    const beneficiary = params?.filters?.beneficiary;
+    if (beneficiary && Object.keys(beneficiary).length > 0) {
+      requestParams.filters = params?.filters;
     }
-    return this.call('list_virtual_account', params);
+    return this.call('list_virtual_account', requestParams);
   }
 
-  async listVirtualTransactions(virtual_account: string) {
+  async listVirtualTransactions(params: {
+    page?: number;
+    per_page?: number;
+    filters: {
+      virtual_account?: string;
+      deal_id?: string;
+      payment_id?: string;
+      created_date_from?: string;
+      created_date_to?: string;
+      incoming?: boolean;
+      operation_type?: string;
+      include_block_operations?: boolean;
+    };
+  }) {
     return this.call('list_virtual_transaction', {
-      page: 1,
-      per_page: 100,
-      filters: { virtual_account },
+      page: params.page ?? 1,
+      per_page: params.per_page ?? 100,
+      filters: params.filters,
     });
   }
 
+  /**
+   * Вывод средств с виртуального счёта (только для standard)
+   * @param params.virtual_account - UUID виртуального счёта
+   * @param params.recipient - реквизиты получателя
+   * @param params.purpose - назначение платежа (до 210 символов)
+   * @param params.ext_key - ключ идемпотентности (UUID)
+   * @param params.identifier - идентификатор (1-60 символов)
+   */
   async refundVirtualAccount(params: {
     virtual_account: string;
-    amount: number;
-    account: string;
-    bank_code: string;
-    name: string;
-    inn: string;
-    kpp?: string;
+    recipient: {
+      amount: number;
+      account: string;
+      bank_code: string;
+      name: string;
+      inn?: string;
+      kpp?: string;
+      document_number?: string;
+    };
+    purpose?: string;
+    ext_key?: string;
+    identifier?: string;
   }) {
     return this.call('refund_virtual_account', params);
   }
 
+  /**
+   * Перевод между виртуальными счетами (v1)
+   * Работает только в рамках одного номинального счёта
+   */
   async transferBetweenVirtualAccounts(params: {
     from_virtual_account: string;
     to_virtual_account: string;
     amount: number;
   }) {
     return this.call('transfer_between_virtual_accounts', params);
+  }
+
+  /**
+   * Перевод между виртуальными счетами (v2)
+   * С поддержкой статуса и идемпотентности
+   */
+  async transferBetweenVirtualAccountsV2(params: {
+    from_virtual_account: string;
+    to_virtual_account: string;
+    amount: number;
+    purpose?: string;
+    ext_key?: string;
+  }) {
+    return this.call('transfer_between_virtual_accounts_v2', params);
+  }
+
+  /**
+   * Получение статуса перевода между счетами
+   */
+  async getVirtualAccountsTransfer(transfer_id: string) {
+    return this.call('get_virtual_accounts_transfer', { transfer_id });
   }
 
   // ==================== СДЕЛКИ ====================

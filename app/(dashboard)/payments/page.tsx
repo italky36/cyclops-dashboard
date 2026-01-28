@@ -60,7 +60,7 @@ export default function PaymentsPage() {
     try {
       const [paymentsRes, accountsRes] = await Promise.all([
         cyclops.listPayments(filter === 'unidentified' ? { identified: false } : undefined),
-        cyclops.listVirtualAccounts({ beneficiary: { is_active: true } }),
+        cyclops.listVirtualAccounts({ filters: { beneficiary: { is_active: true } } }),
       ]);
 
       if (Array.isArray(paymentsRes.result)) {
