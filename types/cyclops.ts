@@ -476,18 +476,51 @@ export interface CyclopsError {
 
 // Коды ошибок Cyclops
 export const CYCLOPS_ERROR_CODES = {
+  // Общие ошибки
+  MULTIPLE_OBJECTS_RETURNED: 4004,
+
+  // Документы
+  DOCUMENT_NOT_FOUND: 4406,
+  DOCUMENT_UPLOAD_ERROR: 4407,
+  DOCUMENT_NOT_UPLOADED: 4408,
+
+  // Бенефициары
   BENEFICIARY_NOT_FOUND: 4409,
   BENEFICIARY_NOT_ACTIVE: 4410,
+
+  // Виртуальные счета
   VIRTUAL_ACCOUNT_NOT_FOUND: 4411,
+  INSUFFICIENT_FUNDS: 4415,
+  VIRTUAL_ACCOUNT_NOT_LINKED: 4556,
+  VIRTUAL_ACCOUNTS_MULTIPLE_NOMINAL: 4557,
+
+  // Платежи
   PAYMENT_NOT_FOUND: 4412,
   PAYMENT_AMOUNT_MISMATCH: 4413,
   PAYMENT_ALREADY_IDENTIFIED: 4414,
-  INSUFFICIENT_FUNDS: 4415,
   REFUND_ERROR: 4422,
+
+  // Сделки
+  DEAL_NOT_FOUND: 4417,
+  DEAL_INVALID_STATUS: 4418,
+  DEAL_RECIPIENT_CANNOT_CHANGE: 4419,
+  DEAL_EXT_KEY_EXISTS: 4442,
+  DEAL_RECIPIENT_ALREADY_EXECUTED: 4447,
+  DEAL_RECIPIENTS_NOT_FOUND: 4448,
+
+  // СБП
+  SBP_BANK_NOT_FOUND: 4428,
+
+  // Комплаенс
   COMPLIANCE_ERROR: 4436,
-  DOCUMENT_NOT_FOUND: 4406,
+  COMPLIANCE_B2C_RESTRICTED: 4437,
   INCORRECT_VO_CODES: 4451,
+
+  // Ограничения
   RESTRICTIONS_IMPOSED: 4558,
+  PAYMENT_TYPE_NOT_ALLOWED: 4947,
+
+  // Идемпотентность и переводы
   IDEMPOTENT_REQUEST_IN_PROCESS: 4909,
   TRANSFER_NOT_FOUND: 4905,
 } as const;
@@ -496,18 +529,51 @@ export type CyclopsErrorCode = typeof CYCLOPS_ERROR_CODES[keyof typeof CYCLOPS_E
 
 // Человекочитаемые сообщения для кодов ошибок
 export const CYCLOPS_ERROR_MESSAGES: Record<number, string> = {
+  // Общие ошибки
+  [CYCLOPS_ERROR_CODES.MULTIPLE_OBJECTS_RETURNED]: 'Ошибка: возвращено более одного объекта',
+
+  // Документы
+  [CYCLOPS_ERROR_CODES.DOCUMENT_NOT_FOUND]: 'Документ не найден',
+  [CYCLOPS_ERROR_CODES.DOCUMENT_UPLOAD_ERROR]: 'Ошибка загрузки документа',
+  [CYCLOPS_ERROR_CODES.DOCUMENT_NOT_UPLOADED]: 'Документ ещё не загружен',
+
+  // Бенефициары
   [CYCLOPS_ERROR_CODES.BENEFICIARY_NOT_FOUND]: 'Бенефициар не найден',
   [CYCLOPS_ERROR_CODES.BENEFICIARY_NOT_ACTIVE]: 'Бенефициар не активен',
+
+  // Виртуальные счета
   [CYCLOPS_ERROR_CODES.VIRTUAL_ACCOUNT_NOT_FOUND]: 'Виртуальный счёт не найден',
+  [CYCLOPS_ERROR_CODES.INSUFFICIENT_FUNDS]: 'Недостаточно средств на виртуальном счёте',
+  [CYCLOPS_ERROR_CODES.VIRTUAL_ACCOUNT_NOT_LINKED]: 'Виртуальный счёт не связан с номинальным счётом плательщика',
+  [CYCLOPS_ERROR_CODES.VIRTUAL_ACCOUNTS_MULTIPLE_NOMINAL]: 'Виртуальные счета должны быть связаны только с одним номинальным счётом',
+
+  // Платежи
   [CYCLOPS_ERROR_CODES.PAYMENT_NOT_FOUND]: 'Платёж не найден',
   [CYCLOPS_ERROR_CODES.PAYMENT_AMOUNT_MISMATCH]: 'Суммы не совпадают',
   [CYCLOPS_ERROR_CODES.PAYMENT_ALREADY_IDENTIFIED]: 'Платёж уже идентифицирован',
-  [CYCLOPS_ERROR_CODES.INSUFFICIENT_FUNDS]: 'Недостаточно средств на виртуальном счёте',
   [CYCLOPS_ERROR_CODES.REFUND_ERROR]: 'Ошибка возврата платежа',
-  [CYCLOPS_ERROR_CODES.COMPLIANCE_ERROR]: 'Ошибка комплаенс-проверки',
-  [CYCLOPS_ERROR_CODES.DOCUMENT_NOT_FOUND]: 'Договор оферты не найден, загрузите документ',
-  [CYCLOPS_ERROR_CODES.INCORRECT_VO_CODES]: 'Некорректные или отсутствующие коды VO для платежа нерезиденту',
-  [CYCLOPS_ERROR_CODES.RESTRICTIONS_IMPOSED]: 'Ограничения по ИП/исполнительному производству',
+
+  // Сделки
+  [CYCLOPS_ERROR_CODES.DEAL_NOT_FOUND]: 'Сделка не найдена',
+  [CYCLOPS_ERROR_CODES.DEAL_INVALID_STATUS]: 'Операция невозможна с текущим статусом сделки',
+  [CYCLOPS_ERROR_CODES.DEAL_RECIPIENT_CANNOT_CHANGE]: 'Нельзя изменить получателя',
+  [CYCLOPS_ERROR_CODES.DEAL_EXT_KEY_EXISTS]: 'Сделка с таким внешним ключом уже существует',
+  [CYCLOPS_ERROR_CODES.DEAL_RECIPIENT_ALREADY_EXECUTED]: 'Платёж получателю уже выполняется или исполнен',
+  [CYCLOPS_ERROR_CODES.DEAL_RECIPIENTS_NOT_FOUND]: 'В сделке нет получателей с указанными номерами',
+
+  // СБП
+  [CYCLOPS_ERROR_CODES.SBP_BANK_NOT_FOUND]: 'СБП-банк не найден по ID',
+
+  // Комплаенс
+  [CYCLOPS_ERROR_CODES.COMPLIANCE_ERROR]: 'Ошибка запроса комплаенс-службы',
+  [CYCLOPS_ERROR_CODES.COMPLIANCE_B2C_RESTRICTED]: 'Комплаенс ввёл ограничение на b2c переводы',
+  [CYCLOPS_ERROR_CODES.INCORRECT_VO_CODES]: 'Назначение платежа нерезиденту не содержит код ВО',
+
+  // Ограничения
+  [CYCLOPS_ERROR_CODES.RESTRICTIONS_IMPOSED]: 'Операция невозможна из-за ограничений по исполнительному производству',
+  [CYCLOPS_ERROR_CODES.PAYMENT_TYPE_NOT_ALLOWED]: 'Тип платежа не разрешён для системы',
+
+  // Идемпотентность и переводы
   [CYCLOPS_ERROR_CODES.IDEMPOTENT_REQUEST_IN_PROCESS]: 'Запрос с таким ext_key уже обрабатывается',
   [CYCLOPS_ERROR_CODES.TRANSFER_NOT_FOUND]: 'Перевод между номинальными счетами не найден',
 };

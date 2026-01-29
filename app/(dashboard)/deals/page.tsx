@@ -1,119 +1,229 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAppStore } from '@/lib/store';
-import { useCyclops } from '@/hooks/useCyclops';
+import { useDeals } from '@/hooks/useDeals';
+import {
+  DEAL_STATUS_LABELS,
+  DEAL_STATUS_COLORS,
+  formatAmount,
+  formatDate,
+} from '@/lib/utils/deals';
+import type { DealStatus, ListDealsParams } from '@/types/cyclops/deals';
 
-interface Deal {
-  deal_id: string;
-  status: string;
-  created_at: string;
-  payers: Array<{ virtual_account: string; amount: number }>;
-  recipients: Array<{ type: string; amount: number }>;
+// Компонент Badge для статуса
+function StatusBadge({ status }: { status: DealStatus }) {
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${DEAL_STATUS_COLORS[status]}`}>
+      {DEAL_STATUS_LABELS[status]}
+    </span>
+  );
 }
 
-const STATUS_LABELS: Record<string, { label: string; class: string }> = {
-  new: { label: 'Новая', class: 'badge-neutral' },
-  in_process: { label: 'В обработке', class: 'badge-warning' },
-  correction: { label: 'Корректировка', class: 'badge-warning' },
-  closed: { label: 'Завершена', class: 'badge-success' },
-  cancelled: { label: 'Отменена', class: 'badge-error' },
-};
-
-export default function DealsPage() {
-  const layer = useAppStore((s) => s.layer);
-  const addRecentAction = useAppStore((s) => s.addRecentAction);
-  const { listDeals, executeDeal, rejectDeal } = useCyclops({ layer });
-
-  const [deals, setDeals] = useState<Deal[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  const loadDeals = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await listDeals();
-      if (Array.isArray(response.result)) {
-        setDeals(response.result);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
-      setError(message);
-      console.error('Failed to load deals:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [listDeals]);
+// Компонент фильтров
+function DealsFilters({
+  filters,
+  onApply,
+  onReset,
+}: {
+  filters: ListDealsParams['filters'];
+  onApply: (filters: ListDealsParams['filters']) => void;
+  onReset: () => void;
+}) {
+  const [localFilters, setLocalFilters] = useState(filters || {});
 
   useEffect(() => {
-    loadDeals();
-  }, [loadDeals]);
+    setLocalFilters(filters || {});
+  }, [filters]);
 
-  const formatMoney = (amount: number) => {
-    return new Intl.NumberFormat('ru-RU', {
-      style: 'currency',
-      currency: 'RUB',
-    }).format(amount);
+  const handleApply = () => {
+    onApply(localFilters);
   };
 
-  const getTotalAmount = (deal: Deal) => {
-    return deal.payers.reduce((sum, p) => sum + p.amount, 0);
+  const handleReset = () => {
+    setLocalFilters({});
+    onReset();
   };
 
-  const handleExecute = async (deal: Deal) => {
-    if (!confirm('Исполнить сделку? Это действие нельзя отменить.')) return;
-    
-    setActionLoading(deal.deal_id);
-    try {
-      await executeDeal(deal.deal_id);
-      addRecentAction({
-        type: 'Исполнение сделки',
-        description: `Сделка ${deal.deal_id.slice(0, 8)}... исполнена`,
-        layer,
-      });
-      await loadDeals();
-    } catch (error) {
-      console.error('Failed to execute deal:', error);
-      alert('Ошибка при исполнении сделки');
-    } finally {
-      setActionLoading(null);
-    }
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="filters-grid">
+        {/* Статус */}
+        <div className="filter-group">
+          <label className="filter-label">Статус</label>
+          <select
+            value={localFilters.status || ''}
+            onChange={(e) =>
+              setLocalFilters({
+                ...localFilters,
+                status: (e.target.value as DealStatus) || undefined,
+              })
+            }
+            className="filter-input"
+          >
+            <option value="">Все</option>
+            <option value="new">Новая</option>
+            <option value="in_process">В процессе</option>
+            <option value="partial">Частично исполнена</option>
+            <option value="closed">Завершена</option>
+            <option value="rejected">Отменена</option>
+            <option value="correction">Требует коррекции</option>
+          </select>
+        </div>
+
+        {/* Внешний ключ */}
+        <div className="filter-group">
+          <label className="filter-label">Внешний ключ</label>
+          <input
+            type="text"
+            value={localFilters.ext_key || ''}
+            onChange={(e) =>
+              setLocalFilters({
+                ...localFilters,
+                ext_key: e.target.value || undefined,
+              })
+            }
+            placeholder="ext_key"
+            className="filter-input"
+          />
+        </div>
+
+        {/* Дата с */}
+        <div className="filter-group">
+          <label className="filter-label">Создана с</label>
+          <input
+            type="date"
+            value={localFilters.created_date_from || ''}
+            onChange={(e) =>
+              setLocalFilters({
+                ...localFilters,
+                created_date_from: e.target.value || undefined,
+              })
+            }
+            className="filter-input"
+          />
+        </div>
+
+        {/* Дата по */}
+        <div className="filter-group">
+          <label className="filter-label">Создана по</label>
+          <input
+            type="date"
+            value={localFilters.created_date_to || ''}
+            onChange={(e) =>
+              setLocalFilters({
+                ...localFilters,
+                created_date_to: e.target.value || undefined,
+              })
+            }
+            className="filter-input"
+          />
+        </div>
+      </div>
+
+      <div className="filters-actions">
+        <button onClick={handleApply} className="btn btn-primary">
+          Применить
+        </button>
+        <button onClick={handleReset} className="btn btn-ghost">
+          Сбросить
+        </button>
+      </div>
+
+      <style jsx>{`
+        .filters-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+        }
+
+        .filter-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .filter-label {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--text-secondary);
+        }
+
+        .filter-input {
+          padding: 10px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          font-size: 14px;
+          transition: border-color 0.15s ease;
+        }
+
+        .filter-input:focus {
+          outline: none;
+          border-color: var(--accent-color);
+        }
+
+        .filters-actions {
+          display: flex;
+          gap: 12px;
+          margin-top: 16px;
+        }
+
+        @media (max-width: 1024px) {
+          .filters-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 640px) {
+          .filters-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// Основная страница
+export default function DealsPage() {
+  const router = useRouter();
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [filters, setFilters] = useState<ListDealsParams['filters']>({});
+
+  const { deals, loading, error, meta, fetchDeals } = useDeals({ autoFetch: false });
+
+  // Загрузка при изменении параметров
+  useEffect(() => {
+    fetchDeals({ page, per_page: perPage, filters });
+  }, [page, perPage, filters, fetchDeals]);
+
+  const handleApplyFilters = (newFilters: ListDealsParams['filters']) => {
+    setFilters(newFilters);
+    setPage(1);
   };
 
-  const handleReject = async (deal: Deal) => {
-    if (!confirm('Отменить сделку?')) return;
-    
-    setActionLoading(deal.deal_id);
-    try {
-      await rejectDeal(deal.deal_id);
-      addRecentAction({
-        type: 'Отмена сделки',
-        description: `Сделка ${deal.deal_id.slice(0, 8)}... отменена`,
-        layer,
-      });
-      await loadDeals();
-    } catch (error) {
-      console.error('Failed to reject deal:', error);
-      alert('Ошибка при отмене сделки');
-    } finally {
-      setActionLoading(null);
-    }
+  const handleResetFilters = () => {
+    setFilters({});
+    setPage(1);
+  };
+
+  const handleRowClick = (dealId: string) => {
+    router.push(`/deals/${dealId}`);
   };
 
   return (
     <div className="deals-page">
+      {/* Шапка */}
       <header className="page-header">
         <div>
           <h1 className="page-title">Сделки</h1>
-          <p className="page-description">
-            Управление выплатами с номинального счёта
-          </p>
+          <p className="page-description">Управление выплатами с номинального счёта</p>
         </div>
-        <Link href="/deals/new" className="btn btn-primary">
+        <Link href="/deals/create" className="btn btn-primary">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
@@ -122,176 +232,119 @@ export default function DealsPage() {
         </Link>
       </header>
 
+      {/* Фильтры */}
+      <DealsFilters filters={filters} onApply={handleApplyFilters} onReset={handleResetFilters} />
+
+      {/* Ошибка */}
+      {error && (
+        <div className="error-banner">
+          <span>{error}</span>
+          <button onClick={() => fetchDeals({ page, per_page: perPage, filters })} className="error-retry">
+            Повторить
+          </button>
+        </div>
+      )}
+
+      {/* Таблица */}
       <div className="card">
-        {isLoading ? (
-          <div className="loading-state">
-            <div className="spinner" />
-            <span>Загрузка...</span>
-          </div>
-        ) : error ? (
-          <div className="error-state">
-            <div className="error-state-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </div>
-            <p className="error-state-title">Ошибка загрузки</p>
-            <p className="error-state-description">{error}</p>
-            <button
-              className="btn btn-primary"
-              style={{ marginTop: 16 }}
-              onClick={() => loadDeals()}
-            >
-              Повторить
-            </button>
-          </div>
-        ) : deals.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-            </div>
-            <p className="empty-state-title">Нет сделок</p>
-            <p className="empty-state-description">
-              Создайте первую сделку для выплаты средств
-            </p>
-            <Link href="/deals/new" className="btn btn-primary" style={{ marginTop: 16 }}>
-              Создать сделку
-            </Link>
-          </div>
-        ) : (
-          <div className="table-wrapper">
-            <table className="table">
-              <thead>
+        <div className="table-wrapper">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Внешний ключ</th>
+                <th>Сумма</th>
+                <th>Статус</th>
+                <th>Создана</th>
+                <th>Обновлена</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                // Скелетон загрузки
+                [...Array(5)].map((_, i) => (
+                  <tr key={i}>
+                    {[...Array(6)].map((_, j) => (
+                      <td key={j}>
+                        <div className="skeleton" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : deals.length === 0 ? (
                 <tr>
-                  <th>ID</th>
-                  <th>Статус</th>
-                  <th>Сумма</th>
-                  <th>Получатели</th>
-                  <th>Создана</th>
-                  <th>Действия</th>
+                  <td colSpan={6} className="empty-cell">
+                    <div className="empty-state-inline">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      <span>Сделки не найдены</span>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {deals.map((deal) => {
-                  const status = STATUS_LABELS[deal.status] || { label: deal.status, class: 'badge-neutral' };
-                  return (
-                    <tr key={deal.deal_id}>
-                      <td>
-                        <span className="code">{deal.deal_id.slice(0, 8)}...</span>
-                      </td>
-                      <td>
-                        <span className={`badge ${status.class}`}>
-                          {status.label}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="money">{formatMoney(getTotalAmount(deal))}</span>
-                      </td>
-                      <td>
-                        {deal.recipients.length} получатель(ей)
-                      </td>
-                      <td>
-                        {new Date(deal.created_at).toLocaleDateString('ru-RU')}
-                      </td>
-                      <td>
-                        <div className="actions">
-                          {deal.status === 'new' && (
-                            <>
-                              <button
-                                className="btn btn-sm btn-primary"
-                                onClick={() => handleExecute(deal)}
-                                disabled={actionLoading === deal.deal_id}
-                              >
-                                {actionLoading === deal.deal_id ? (
-                                  <span className="spinner" />
-                                ) : (
-                                  'Исполнить'
-                                )}
-                              </button>
-                              <button
-                                className="btn btn-sm btn-ghost"
-                                onClick={() => handleReject(deal)}
-                                disabled={actionLoading === deal.deal_id}
-                              >
-                                Отменить
-                              </button>
-                            </>
-                          )}
-                          <button
-                            className="btn btn-sm btn-ghost"
-                            onClick={() => setSelectedDeal(deal)}
-                          >
-                            Детали
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ) : (
+                deals.map((deal) => (
+                  <tr key={deal.id} onClick={() => handleRowClick(deal.id)} className="clickable-row">
+                    <td>
+                      <span className="code">{deal.id.slice(0, 8)}...</span>
+                    </td>
+                    <td>
+                      <span className="text-secondary">{deal.ext_key || '—'}</span>
+                    </td>
+                    <td>
+                      <span className="money">{deal.amount !== undefined ? formatAmount(deal.amount) : '—'}</span>
+                    </td>
+                    <td>{deal.status && <StatusBadge status={deal.status} />}</td>
+                    <td>
+                      <span className="text-secondary">{deal.created_at ? formatDate(deal.created_at) : '—'}</span>
+                    </td>
+                    <td>
+                      <span className="text-secondary">{deal.updated_at ? formatDate(deal.updated_at) : '—'}</span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Deal Details Modal */}
-      {selectedDeal && (
-        <div className="modal-overlay" onClick={() => setSelectedDeal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Детали сделки</h3>
-              <button className="modal-close" onClick={() => setSelectedDeal(null)}>
-                ✕
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="detail-group">
-                <label>ID сделки</label>
-                <span className="code">{selectedDeal.deal_id}</span>
-              </div>
-              <div className="detail-group">
-                <label>Статус</label>
-                <span className={`badge ${STATUS_LABELS[selectedDeal.status]?.class || 'badge-neutral'}`}>
-                  {STATUS_LABELS[selectedDeal.status]?.label || selectedDeal.status}
-                </span>
-              </div>
-              <div className="detail-group">
-                <label>Создана</label>
-                <span>{new Date(selectedDeal.created_at).toLocaleString('ru-RU')}</span>
-              </div>
-              
-              <h4 style={{ marginTop: 20, marginBottom: 12 }}>Плательщики</h4>
-              {selectedDeal.payers.map((payer, i) => (
-                <div key={i} className="detail-card">
-                  <div className="detail-row">
-                    <span>Счёт:</span>
-                    <span className="code">{payer.virtual_account.slice(0, 12)}...</span>
-                  </div>
-                  <div className="detail-row">
-                    <span>Сумма:</span>
-                    <span className="money">{formatMoney(payer.amount)}</span>
-                  </div>
-                </div>
-              ))}
+      {/* Пагинация */}
+      {meta && (
+        <div className="pagination">
+          <div className="pagination-info">Показано {deals.length} из {meta.total}</div>
 
-              <h4 style={{ marginTop: 20, marginBottom: 12 }}>Получатели</h4>
-              {selectedDeal.recipients.map((recipient, i) => (
-                <div key={i} className="detail-card">
-                  <div className="detail-row">
-                    <span>Тип:</span>
-                    <span>{recipient.type}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span>Сумма:</span>
-                    <span className="money">{formatMoney(recipient.amount)}</span>
-                  </div>
-                </div>
-              ))}
+          <div className="pagination-controls">
+            <select
+              value={perPage}
+              onChange={(e) => {
+                setPerPage(Number(e.target.value));
+                setPage(1);
+              }}
+              className="pagination-select"
+            >
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+
+            <div className="pagination-buttons">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="btn btn-ghost btn-sm"
+              >
+                Назад
+              </button>
+              <span className="pagination-page">Страница {meta.currentPage}</span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={deals.length < perPage}
+                className="btn btn-ghost btn-sm"
+              >
+                Вперёд
+              </button>
             </div>
           </div>
         </div>
@@ -308,76 +361,107 @@ export default function DealsPage() {
           justify-content: space-between;
         }
 
-        .loading-state {
+        .error-banner {
           display: flex;
           align-items: center;
-          justify-content: center;
-          gap: 12px;
-          padding: 48px;
+          justify-content: space-between;
+          padding: 12px 16px;
+          background: var(--error-bg, #fef2f2);
+          color: var(--error-color, #dc2626);
+          border-radius: 8px;
+          margin-bottom: 16px;
+          font-size: 14px;
+        }
+
+        .error-retry {
+          background: none;
+          border: none;
+          color: inherit;
+          text-decoration: underline;
+          cursor: pointer;
+          font-size: 14px;
+        }
+
+        .skeleton {
+          height: 20px;
+          background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
+          border-radius: 4px;
+        }
+
+        @keyframes shimmer {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
+        }
+
+        .clickable-row {
+          cursor: pointer;
+          transition: background-color 0.15s ease;
+        }
+
+        .clickable-row:hover {
+          background: var(--bg-hover);
+        }
+
+        .text-secondary {
           color: var(--text-secondary);
         }
 
-        .error-state {
+        .empty-cell {
+          padding: 48px !important;
+        }
+
+        .empty-state-inline {
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: center;
-          padding: 48px 24px;
-          text-align: center;
+          gap: 12px;
+          color: var(--text-tertiary);
         }
 
-        .error-state-icon {
-          color: var(--error-color, #ef4444);
-          margin-bottom: 16px;
+        .pagination {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 16px;
+          padding: 0 4px;
         }
 
-        .error-state-title {
-          font-size: 18px;
-          font-weight: 600;
-          color: var(--text-primary);
-          margin: 0 0 8px 0;
-        }
-
-        .error-state-description {
+        .pagination-info {
           font-size: 14px;
           color: var(--text-secondary);
-          margin: 0;
-          max-width: 500px;
-          white-space: pre-line;
-          line-height: 1.6;
         }
 
-        .actions {
+        .pagination-controls {
           display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .pagination-select {
+          padding: 6px 10px;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          font-size: 14px;
+        }
+
+        .pagination-buttons {
+          display: flex;
+          align-items: center;
           gap: 8px;
         }
 
-        .detail-group {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          margin-bottom: 16px;
-        }
-
-        .detail-group label {
-          font-size: 12px;
-          color: var(--text-tertiary);
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .detail-card {
-          padding: 12px;
-          background: var(--bg-secondary);
-          border-radius: 8px;
-          margin-bottom: 8px;
-        }
-
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
+        .pagination-page {
           font-size: 14px;
-          padding: 4px 0;
+          color: var(--text-secondary);
+          padding: 0 8px;
         }
 
         @media (max-width: 767px) {
@@ -391,25 +475,17 @@ export default function DealsPage() {
             width: 100%;
           }
 
-          .loading-state {
-            padding: 32px 16px;
+          .pagination {
+            flex-direction: column;
+            gap: 12px;
+            align-items: stretch;
           }
 
-          .actions {
-            flex-wrap: wrap;
-            gap: 6px;
-          }
-
-          .actions .btn {
-            flex: 1;
-            min-width: 80px;
+          .pagination-controls {
+            justify-content: space-between;
           }
 
           /* Преобразуем таблицу в карточки */
-          :global(.table) {
-            min-width: unset !important;
-          }
-
           :global(.table thead) {
             display: none;
           }
@@ -421,7 +497,7 @@ export default function DealsPage() {
             margin-bottom: 8px;
             background: var(--bg-secondary);
             border-radius: 12px;
-            gap: 12px;
+            gap: 8px;
           }
 
           :global(.table td) {
@@ -432,20 +508,19 @@ export default function DealsPage() {
             border-bottom: none;
           }
 
-          :global(.table td:last-child) {
-            flex-direction: column;
-            align-items: stretch;
-            padding-top: 12px;
-            margin-top: 8px;
-            border-top: 1px solid var(--border-color);
+          :global(.table td::before) {
+            content: attr(data-label);
+            font-weight: 500;
+            color: var(--text-tertiary);
+            font-size: 12px;
           }
 
-          .detail-group {
-            margin-bottom: 12px;
+          .empty-cell {
+            justify-content: center !important;
           }
 
-          .detail-card {
-            padding: 10px;
+          .empty-cell::before {
+            display: none;
           }
         }
       `}</style>
