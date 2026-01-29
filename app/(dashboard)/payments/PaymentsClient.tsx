@@ -120,6 +120,7 @@ export default function PaymentsPage() {
 
   const [tenderSource, setTenderSource] = useState(initialQuery.tenderSource);
   const [autoFindEnabled, setAutoFindEnabled] = useState(initialQuery.autoFind);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -320,6 +321,17 @@ export default function PaymentsPage() {
 
   const totalPages = Math.ceil(total / perPage);
 
+  const copyText = async (value: string, key: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 1200);
+    } catch (err) {
+      console.error('Copy failed', err);
+    }
+  };
+
   return (
     <div className="payments-page">
       <header className="page-header">
@@ -459,7 +471,7 @@ export default function PaymentsPage() {
                     <th>ID</th>
                     <th>Дата и время</th>
                     <th>Входящий</th>
-                    <th>Счёт платильщика</th>
+                    <th>Счёт отправителя</th>
                     <th>БИК</th>
                     <th>Счёт получателя</th>
                     <th>БИК</th>
@@ -479,14 +491,29 @@ export default function PaymentsPage() {
 
                     return (
                       <tr key={paymentKey}>
-                        <td>
+                        <td className="id-cell">
                           {paymentId ? (
-                            <Link
-                              href={`/payments/${paymentId}`}
-                              className="payment-id-link"
-                            >
-                              {paymentId.slice(0, 8)}...
-                            </Link>
+                            <div className="cell-with-copy">
+                              <Link
+                                href={`/payments/${paymentId}`}
+                                className="payment-id-link cell-value"
+                                title={paymentId}
+                              >
+                                {paymentId}
+                              </Link>
+                              <button
+                                type="button"
+                                className={`copy-btn ${copiedKey === `id:${paymentId}` ? 'copied' : ''}`}
+                                title="Скопировать ID"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  copyText(paymentId, `id:${paymentId}`);
+                                }}
+                              >
+                                ⧉
+                              </button>
+                            </div>
                           ) : (
                             '—'
                           )}
@@ -501,23 +528,51 @@ export default function PaymentsPage() {
                         </td>
                         <td className="account-cell">
                           {payment.payer_account ? (
-                            <span title={payment.payer_account}>
-                              {payment.payer_account.slice(0, 8)}...
+                            <span
+                              className={`cell-value copyable ${copiedKey === `payer:${paymentId}` ? 'copied' : ''}`}
+                              title="Нажмите чтобы скопировать"
+                              onClick={() => copyText(payment.payer_account as string, `payer:${paymentId}`)}
+                            >
+                              {payment.payer_account}
                             </span>
                           ) : '-'}
                         </td>
                         <td className="bic-cell">
-                          {payment.payer_bank_code || '-'}
+                          {payment.payer_bank_code ? (
+                            <span
+                              className={`cell-value copyable ${copiedKey === `payerbic:${paymentId}` ? 'copied' : ''}`}
+                              title="Нажмите чтобы скопировать"
+                              onClick={() => copyText(payment.payer_bank_code as string, `payerbic:${paymentId}`)}
+                            >
+                              {payment.payer_bank_code}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                         <td className="account-cell">
                           {payment.recipient_account ? (
-                            <span title={payment.recipient_account}>
-                              {payment.recipient_account.slice(0, 8)}...
+                            <span
+                              className={`cell-value copyable ${copiedKey === `rec:${paymentId}` ? 'copied' : ''}`}
+                              title="Нажмите чтобы скопировать"
+                              onClick={() => copyText(payment.recipient_account as string, `rec:${paymentId}`)}
+                            >
+                              {payment.recipient_account}
                             </span>
                           ) : '-'}
                         </td>
                         <td className="bic-cell">
-                          {payment.recipient_bank_code || '-'}
+                          {payment.recipient_bank_code ? (
+                            <span
+                              className={`cell-value copyable ${copiedKey === `recbic:${paymentId}` ? 'copied' : ''}`}
+                              title="Нажмите чтобы скопировать"
+                              onClick={() => copyText(payment.recipient_bank_code as string, `recbic:${paymentId}`)}
+                            >
+                              {payment.recipient_bank_code}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                       </tr>
                     );
@@ -737,6 +792,16 @@ export default function PaymentsPage() {
           overflow-x: auto;
         }
 
+        .id-cell {
+          min-width: 220px;
+        }
+
+        .cell-with-copy {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+
         .payment-id-link {
           font-family: monospace;
           font-size: 13px;
@@ -775,6 +840,39 @@ export default function PaymentsPage() {
           font-size: 12px;
         }
 
+        .cell-value {
+          word-break: break-all;
+          white-space: normal;
+        }
+
+        .copyable {
+          cursor: pointer;
+          transition: color 0.2s ease;
+        }
+
+        .copyable:hover {
+          color: var(--color-primary);
+        }
+
+        .copied {
+          color: var(--color-success);
+        }
+
+        .copy-btn {
+          background: transparent;
+          border: none;
+          color: var(--text-secondary);
+          cursor: pointer;
+          font-size: 12px;
+          padding: 2px 4px;
+          border-radius: 4px;
+        }
+
+        .copy-btn:hover {
+          color: var(--color-primary);
+          background: var(--bg-tertiary);
+        }
+
         .pagination {
           display: flex;
           align-items: center;
@@ -798,6 +896,15 @@ export default function PaymentsPage() {
           .table th:nth-child(7),
           .table td:nth-child(7) {
             display: none;
+          }
+
+          .cell-value {
+            display: inline-block;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            word-break: normal;
           }
         }
 
