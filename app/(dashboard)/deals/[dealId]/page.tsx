@@ -1,9 +1,17 @@
 'use client';
 
-import { useMemo, useState, Fragment } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDeal } from '@/hooks/useDeals';
+import { useCyclops } from '@/hooks/useCyclops';
+import { useAppStore } from '@/lib/store';
+import {
+  DEAL_DOCUMENT_MIME_TYPES,
+  MAX_DEAL_DOCUMENT_SIZE_BYTES,
+  resolveDocumentMimeType,
+  validateDealDocumentFile,
+} from '@/lib/cyclops-document-utils';
 import {
   DEAL_STATUS_LABELS,
   DEAL_STATUS_COLORS,
@@ -12,7 +20,8 @@ import {
   formatDate,
   getAvailableActions,
 } from '@/lib/utils/deals';
-import type { ComplianceCheckPayment, DealDocument, DealRecipientInfo } from '@/types/cyclops/deals';
+import type { ComplianceCheckDealResult, ComplianceCheckPayment, DealRecipientInfo } from '@/types/cyclops/deals';
+import type { DocumentListItem } from '@/types/cyclops';
 
 const RECIPIENT_STATUS_COLORS: Record<string, string> = {
   new: 'bg-gray-100 text-gray-800',
@@ -160,7 +169,7 @@ function RecipientRequisites({ recipient }: { recipient: DealRecipientInfo }) {
   );
 }
 
-const getDocumentStatus = (doc: DealDocument) => {
+const getDocumentStatus = (doc: { success_added?: boolean | null; success_added_desc?: string | null }) => {
   const success = typeof doc.success_added === 'boolean' ? doc.success_added : undefined;
   const description = typeof doc.success_added_desc === 'string' ? doc.success_added_desc : null;
 
@@ -171,6 +180,38 @@ const getDocumentStatus = (doc: DealDocument) => {
     return { label: 'Ошибка', className: 'badge badge-error', description };
   }
   return { label: '—', className: 'badge badge-neutral', description };
+};
+
+const DEAL_DOCUMENT_EXTENSIONS = ['.pdf', '.gif', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp'];
+const DEAL_DOCUMENT_ACCEPT = [...DEAL_DOCUMENT_EXTENSIONS, ...DEAL_DOCUMENT_MIME_TYPES].join(',');
+const DEAL_DOCUMENT_POLL_INTERVAL_MS = 3000;
+const DEAL_DOCUMENT_POLL_TIMEOUT_MS = 90000;
+const DEAL_DOCUMENT_TYPE_OPTIONS = [
+  { value: 'service_agreement', label: 'Договор оказания услуг' },
+];
+const DEAL_DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  service_agreement: 'Договор оказания услуг',
+};
+
+const formatFileSize = (size: number) => {
+  if (size < 1024) return `${size} Б`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} КБ`;
+  return `${(size / (1024 * 1024)).toFixed(2)} МБ`;
+};
+
+const formatDateShort = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('ru-RU');
+};
+
+const extractDocumentId = (record?: DocumentListItem | string | null) => {
+  if (!record) return '';
+  if (typeof record === 'string') return record;
+  const raw = record.document_id ?? record.id;
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'number') return String(raw);
+  return '';
 };
 
 export default function DealPage({ params }: { params: { dealId: string } }) {
@@ -188,17 +229,254 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
     checkCompliance,
   } = useDeal(dealId);
 
+  const layer = useAppStore((s) => s.layer);
+  const { listDocuments, uploadDocumentDeal, getVirtualAccount } = useCyclops({ layer });
+
+  const [beneficiaryId, setBeneficiaryId] = useState<string | null>(null);
+  const [beneficiaryError, setBeneficiaryError] = useState<string | null>(null);
+  const [beneficiaryLoading, setBeneficiaryLoading] = useState(false);
+
+  const [dealDocuments, setDealDocuments] = useState<DocumentListItem[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+
+  const [documentType, setDocumentType] = useState('service_agreement');
+  const [documentDate, setDocumentDate] = useState('');
+  const [documentNumber, setDocumentNumber] = useState('');
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentFileError, setDocumentFileError] = useState<string | null>(null);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [pendingDocumentId, setPendingDocumentId] = useState<string | null>(null);
+  const [pollingStatus, setPollingStatus] = useState<'idle' | 'checking' | 'found' | 'timeout'>('idle');
+
+  const pollingTimerRef = useRef<number | null>(null);
+  const pollingStartedAtRef = useRef<number | null>(null);
+  const beneficiaryFetchKeyRef = useRef<string | null>(null);
+
   const [expandedRecipient, setExpandedRecipient] = useState<number | null>(null);
   const [executeModalOpen, setExecuteModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
-  const [complianceResult, setComplianceResult] = useState<ComplianceCheckPayment[] | null>(null);
+  const [complianceResult, setComplianceResult] = useState<ComplianceCheckDealResult | null>(null);
+  const [complianceModalOpen, setComplianceModalOpen] = useState(false);
+  const [complianceError, setComplianceError] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [selectedRecipients, setSelectedRecipients] = useState<number[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
   const closeExecuteModal = () => {
     setExecuteModalOpen(false);
     setSelectedRecipients([]);
   };
+
+  const hasDocumentId = useCallback((documents: DocumentListItem[], documentId: string) => {
+    return documents.some((doc) => extractDocumentId(doc) === documentId);
+  }, []);
+
+  const stopDocumentPolling = useCallback(() => {
+    if (pollingTimerRef.current !== null) {
+      window.clearTimeout(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+    pollingStartedAtRef.current = null;
+  }, []);
+
+  const loadDealDocuments = useCallback(async (options?: { silent?: boolean }) => {
+    if (!dealId) return [] as DocumentListItem[];
+    if (!options?.silent) {
+      setDocumentsLoading(true);
+    }
+    setDocumentsError(null);
+
+    try {
+      const filters: {
+        deal_id: string;
+        beneficiary?: { id: string };
+      } = { deal_id: dealId };
+      if (beneficiaryId) {
+        filters.beneficiary = { id: beneficiaryId };
+      }
+      const response = await listDocuments({
+        page: 1,
+        per_page: 100,
+        filters,
+      });
+      const listResult = response.result?.documents ?? response.result;
+      const list = Array.isArray(listResult) ? listResult : [];
+      const normalized = list.map((item) => (typeof item === 'string' ? { document_id: item } : item));
+      setDealDocuments(normalized);
+      return normalized;
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : 'Не удалось получить документы';
+      setDocumentsError(message);
+      setDealDocuments([]);
+      return [];
+    } finally {
+      if (!options?.silent) {
+        setDocumentsLoading(false);
+      }
+    }
+  }, [beneficiaryId, dealId, listDocuments]);
+
+  const startDocumentPolling = useCallback(async (documentId: string) => {
+    if (!documentId) return;
+    stopDocumentPolling();
+    pollingStartedAtRef.current = Date.now();
+    setPollingStatus('checking');
+
+    const poll = async () => {
+      const documents = await loadDealDocuments({ silent: true });
+      if (hasDocumentId(documents, documentId)) {
+        setPollingStatus('found');
+        setPendingDocumentId(null);
+        stopDocumentPolling();
+        return;
+      }
+      const startedAt = pollingStartedAtRef.current || Date.now();
+      if (Date.now() - startedAt >= DEAL_DOCUMENT_POLL_TIMEOUT_MS) {
+        setPollingStatus('timeout');
+        stopDocumentPolling();
+        return;
+      }
+      pollingTimerRef.current = window.setTimeout(poll, DEAL_DOCUMENT_POLL_INTERVAL_MS);
+    };
+
+    await poll();
+  }, [hasDocumentId, loadDealDocuments, stopDocumentPolling]);
+
+  const checkPendingDocumentNow = useCallback(async () => {
+    if (!pendingDocumentId) return;
+    setPollingStatus('checking');
+    const documents = await loadDealDocuments({ silent: true });
+    if (hasDocumentId(documents, pendingDocumentId)) {
+      setPollingStatus('found');
+      setPendingDocumentId(null);
+      stopDocumentPolling();
+      return;
+    }
+    setPollingStatus('timeout');
+  }, [hasDocumentId, loadDealDocuments, pendingDocumentId, stopDocumentPolling]);
+
+  const handleDocumentFileChange = (file: File | null) => {
+    setDocumentFile(file);
+    setUploadMessage(null);
+    const validationError = file ? validateDealDocumentFile(file) : 'Выберите файл';
+    setDocumentFileError(validationError);
+  };
+
+  const handleDealDocumentUpload = async () => {
+    setUploadMessage(null);
+    if (!beneficiaryId) {
+      setUploadMessage('В сделке нет beneficiary_id — загрузка документа невозможна');
+      return;
+    }
+    if (!documentDate) {
+      setUploadMessage('Укажите дату документа');
+      return;
+    }
+    if (!documentNumber.trim()) {
+      setUploadMessage('Укажите номер документа');
+      return;
+    }
+    if (!documentFile) {
+      setDocumentFileError('Выберите файл');
+      return;
+    }
+    const validationError = validateDealDocumentFile(documentFile);
+    if (validationError) {
+      setDocumentFileError(validationError);
+      return;
+    }
+
+    setUploadingDocument(true);
+    try {
+      const result = await uploadDocumentDeal({
+        beneficiary_id: beneficiaryId,
+        deal_id: dealId,
+        document_type: documentType,
+        document_date: documentDate,
+        document_number: documentNumber.trim(),
+        file: documentFile,
+      });
+
+      const documentId = typeof result?.document_id === 'string'
+        ? result.document_id
+        : typeof (result as { id?: unknown } | undefined)?.id === 'string'
+          ? (result as { id?: string }).id!
+          : '';
+
+      setUploadMessage(documentId ? `Документ отправлен. ID: ${documentId}` : 'Документ отправлен');
+      setDocumentFile(null);
+      setDocumentFileError(null);
+      setPendingDocumentId(documentId || null);
+      if (documentId) {
+        await startDocumentPolling(documentId);
+      } else {
+        await loadDealDocuments({ silent: true });
+      }
+    } catch (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : 'Ошибка при загрузке документа';
+      setUploadMessage(message);
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!deal) return;
+
+    const directBeneficiary = (deal as { beneficiary_id?: string }).beneficiary_id;
+    if (directBeneficiary && directBeneficiary !== 'undefined') {
+      setBeneficiaryId(directBeneficiary);
+      setBeneficiaryError(null);
+      setBeneficiaryLoading(false);
+      return;
+    }
+
+    const payerAccount = deal.payers?.[0]?.virtual_account;
+    if (!payerAccount) {
+      setBeneficiaryId(null);
+      setBeneficiaryError('В сделке нет beneficiary_id — загрузка документа невозможна');
+      setBeneficiaryLoading(false);
+      return;
+    }
+
+    const fetchKey = `${deal.id}:${payerAccount}`;
+    if (beneficiaryFetchKeyRef.current === fetchKey) return;
+    beneficiaryFetchKeyRef.current = fetchKey;
+
+    setBeneficiaryLoading(true);
+    setBeneficiaryError(null);
+
+    getVirtualAccount(payerAccount)
+      .then((response) => {
+        const virtualAccount = response.result?.virtual_account;
+        const resolved = virtualAccount?.beneficiary_id;
+        if (resolved && typeof resolved === 'string') {
+          setBeneficiaryId(resolved);
+          setBeneficiaryError(null);
+        } else {
+          setBeneficiaryId(null);
+          setBeneficiaryError('В сделке нет beneficiary_id — загрузка документа невозможна');
+        }
+      })
+      .catch(() => {
+        setBeneficiaryId(null);
+        setBeneficiaryError('Не удалось получить beneficiary_id для сделки');
+      })
+      .finally(() => {
+        setBeneficiaryLoading(false);
+      });
+  }, [deal, getVirtualAccount]);
+
+  useEffect(() => {
+    if (!dealId) return;
+    loadDealDocuments();
+  }, [dealId, beneficiaryId, loadDealDocuments]);
+
+  useEffect(() => () => {
+    stopDocumentPolling();
+  }, [stopDocumentPolling]);
 
   const payerDocuments = useMemo(() => {
     if (!deal?.payers) return [];
@@ -210,6 +488,66 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
       }))
     );
   }, [deal?.payers]);
+
+  const compliancePayments = useMemo(
+    () => complianceResult?.compliance_check_payments ?? [],
+    [complianceResult?.compliance_check_payments]
+  );
+  const hasComplianceMessages = useMemo(
+    () => compliancePayments.some((item) => item.messages.length > 0),
+    [compliancePayments]
+  );
+
+  const complianceCopyText = useMemo(() => {
+    if (!complianceResult) return '';
+    const header = `Deal ${deal?.id ?? dealId} compliance_check_deal`;
+    if (compliancePayments.length === 0) {
+      return `${header}\nNo issues reported.`;
+    }
+    const lines = compliancePayments.flatMap((item) => {
+      const status = item.approved ? 'APPROVED' : 'REJECTED';
+      if (!item.messages.length) {
+        return [`Recipient #${item.number} - ${status}`];
+      }
+      return item.messages.map(
+        (msg, index) => `Recipient #${item.number} - ${status} - ${index + 1}. [${msg.level}] ${msg.text}`
+      );
+    });
+    return [header, ...lines].join('\n');
+  }, [compliancePayments, complianceResult, deal?.id, dealId]);
+
+  const handleCopyCompliance = async () => {
+    if (!complianceCopyText) return;
+    try {
+      await navigator.clipboard.writeText(complianceCopyText);
+      setCopyState('copied');
+      window.setTimeout(() => setCopyState('idle'), 2000);
+    } catch {
+      setCopyState('error');
+      window.setTimeout(() => setCopyState('idle'), 2000);
+    }
+  };
+
+  const handleOpenComplianceModal = async () => {
+    if (complianceResult) {
+      setComplianceModalOpen(true);
+      return;
+    }
+    setActionLoading(true);
+    setComplianceError(null);
+    try {
+      const result = await checkCompliance();
+      setComplianceResult(result);
+      setComplianceError(null);
+      setComplianceModalOpen(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Ошибка проверки комплаенс';
+      setComplianceError(errorMessage);
+      setComplianceModalOpen(true);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   if (loading && !deal) {
     return (
@@ -331,11 +669,16 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
 
   const handleCheckCompliance = async () => {
     setActionLoading(true);
+    setComplianceError(null);
     try {
       const result = await checkCompliance();
       setComplianceResult(result);
-    } catch {
-      // Ошибка отображается в error
+      setComplianceError(null);
+      setComplianceModalOpen(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Ошибка проверки комплаенс';
+      setComplianceError(errorMessage);
+      setComplianceModalOpen(true);
     } finally {
       setActionLoading(false);
     }
@@ -357,9 +700,14 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
               </div>
             ) : null}
           </div>
-          <span className={`badge deal-status-badge status-${deal.status} ${DEAL_STATUS_COLORS[deal.status]}`}>
+          <button
+            type="button"
+            className={`badge deal-status-badge status-${deal.status} ${DEAL_STATUS_COLORS[deal.status]} compliance-clickable`}
+            onClick={handleOpenComplianceModal}
+            title="Показать детали комплаенс"
+          >
             {DEAL_STATUS_LABELS[deal.status]}
-          </span>
+          </button>
         </div>
       </header>
 
@@ -404,7 +752,7 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
         ) : null}
       </div>
 
-      {complianceResult ? (
+      {complianceResult?.compliance_check_payments?.length ? (
         <div className="card compliance-card">
           <div className="card-header">
             <h2 className="card-title">Результат проверки комплаенс</h2>
@@ -413,7 +761,7 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
             </button>
           </div>
           <div className="compliance-results">
-            {complianceResult.map((item) => (
+            {complianceResult.compliance_check_payments.map((item: ComplianceCheckPayment) => (
               <div key={item.number} className="compliance-item">
                 <span className={`compliance-icon ${item.approved ? 'approved' : 'rejected'}`}>
                   {item.approved ? '✓' : '✗'}
@@ -517,6 +865,207 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
         ) : null}
       </div>
 
+      <div className="card documents-card">
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">Документы сделки</h2>
+            <p className="page-description" style={{ marginBottom: 0 }}>
+              Загрузите подтверждающий документ по сделке и дождитесь появления в списке.
+            </p>
+          </div>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => loadDealDocuments()}
+            disabled={documentsLoading}
+            title="Обновить список документов"
+          >
+            {documentsLoading ? (
+              <>
+                <span className="spinner" />
+                Обновление...
+              </>
+            ) : (
+              'Обновить список'
+            )}
+          </button>
+        </div>
+
+        {beneficiaryLoading && (
+          <div className="form-hint">Определяем beneficiary_id для сделки...</div>
+        )}
+        {beneficiaryError && (
+          <div className="doc-error">
+            <p>{beneficiaryError}</p>
+          </div>
+        )}
+
+        {documentsLoading ? (
+          <div className="doc-skeleton">
+            <div className="skeleton-line" />
+            <div className="skeleton-line short" />
+            <div className="skeleton-line" />
+          </div>
+        ) : documentsError ? (
+          <div className="doc-error">
+            <p>{documentsError}</p>
+            <button className="btn btn-secondary btn-sm" onClick={() => loadDealDocuments()}>
+              Повторить
+            </button>
+          </div>
+        ) : dealDocuments.length > 0 ? (
+          <div className="documents-list deal-documents-list">
+            {dealDocuments.map((doc, index) => {
+              const documentId = extractDocumentId(doc);
+              const status = getDocumentStatus(doc);
+              const typeLabel = doc.type ? (DEAL_DOCUMENT_TYPE_LABELS[doc.type] || doc.type) : 'Документ';
+              const metaParts = [
+                doc.document_number ? `№ ${doc.document_number}` : null,
+                doc.document_date ? `от ${formatDateShort(doc.document_date)}` : null,
+              ].filter(Boolean);
+              return (
+                <div key={documentId || index} className="document-item">
+                  <div>
+                    <div className="document-title">{typeLabel}</div>
+                    {documentId && (
+                      <div className="document-meta">
+                        ID: <span className="code">{documentId}</span>
+                      </div>
+                    )}
+                    {metaParts.length > 0 && (
+                      <div className="document-meta">{metaParts.join(' ')}</div>
+                    )}
+                    {status.description ? (
+                      <div className="document-meta document-description">{status.description}</div>
+                    ) : null}
+                  </div>
+                  <span className={status.className}>{status.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="documents-empty">Документы по сделке пока не загружены.</div>
+        )}
+
+        <div className="deal-documents-upload">
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Тип документа *</label>
+              <select
+                className="form-input"
+                value={documentType}
+                onChange={(e) => {
+                  setDocumentType(e.target.value);
+                  setUploadMessage(null);
+                }}
+                disabled={uploadingDocument}
+              >
+                {DEAL_DOCUMENT_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Дата документа *</label>
+              <input
+                type="date"
+                className="form-input"
+                value={documentDate}
+                onChange={(e) => {
+                  setDocumentDate(e.target.value);
+                  setUploadMessage(null);
+                }}
+                disabled={uploadingDocument}
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Номер документа *</label>
+            <input
+              type="text"
+              className="form-input"
+              value={documentNumber}
+              onChange={(e) => {
+                setDocumentNumber(e.target.value);
+                setUploadMessage(null);
+              }}
+              disabled={uploadingDocument}
+              placeholder="Например, SA-2024-01"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Файл *</label>
+            <input
+              type="file"
+              className="form-input"
+              accept={DEAL_DOCUMENT_ACCEPT}
+              onChange={(e) => handleDocumentFileChange(e.target.files?.[0] || null)}
+              disabled={uploadingDocument}
+            />
+            {documentFile && (
+              <div className="file-info">
+                <div>Файл: {documentFile.name}</div>
+                <div>Размер: {formatFileSize(documentFile.size)}</div>
+                <div>Content-Type: {resolveDocumentMimeType(documentFile) || '—'}</div>
+              </div>
+            )}
+            {documentFileError && <span className="form-error">{documentFileError}</span>}
+            <span className="form-hint">
+              Допустимые форматы: PDF, GIF, JPG, PNG, TIFF, BMP. Максимум {Math.round(MAX_DEAL_DOCUMENT_SIZE_BYTES / (1024 * 1024))} МБ.
+            </span>
+          </div>
+
+          {uploadMessage && (
+            <div className="form-hint" style={{ marginTop: 8 }}>
+              {uploadMessage}
+            </div>
+          )}
+
+          {pendingDocumentId && pollingStatus === 'checking' && (
+            <div className="form-hint">
+              Проверяем появление документа... (ID: {pendingDocumentId})
+            </div>
+          )}
+          {pendingDocumentId && pollingStatus === 'timeout' && (
+            <div className="doc-pending">
+              <span>Документ принят, но ещё обрабатывается. Обновите позже.</span>
+              <button className="btn btn-secondary btn-sm" onClick={checkPendingDocumentNow}>
+                Проверить сейчас
+              </button>
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button
+              className="btn btn-primary"
+              onClick={handleDealDocumentUpload}
+              disabled={
+                uploadingDocument ||
+                beneficiaryLoading ||
+                !beneficiaryId ||
+                !documentDate ||
+                !documentNumber.trim() ||
+                !documentFile ||
+                !!documentFileError
+              }
+            >
+              {uploadingDocument ? (
+                <>
+                  <span className="spinner" />
+                  Загрузка...
+                </>
+              ) : (
+                'Загрузить документ'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="card">
         <div className="card-header">
           <h2 className="card-title">Получатели</h2>
@@ -584,6 +1133,112 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
           </table>
         </div>
       </div>
+
+      <Modal
+        open={complianceModalOpen}
+        onClose={() => {
+          setComplianceModalOpen(false);
+          setComplianceError(null);
+        }}
+        title="Детали комплаенс-проверки"
+        footer={
+          <>
+            <button onClick={() => {
+              setComplianceModalOpen(false);
+              setComplianceError(null);
+            }} className="btn btn-secondary">
+              Закрыть
+            </button>
+            {!complianceError && (
+              <button onClick={handleCopyCompliance} className="btn btn-primary" disabled={!hasComplianceMessages}>
+                {copyState === 'copied' ? 'Скопировано' : copyState === 'error' ? 'Ошибка' : 'Копировать'}
+              </button>
+            )}
+          </>
+        }
+      >
+        {complianceError ? (
+          <div className="compliance-error-container">
+            <div className="compliance-error-icon">⚠️</div>
+            <div className="compliance-error-content">
+              <div className="compliance-error-title">Ошибка проверки комплаенс</div>
+              <div className="compliance-error-message">{complianceError}</div>
+            </div>
+          </div>
+        ) : compliancePayments.length > 0 ? (
+          <>
+            {(() => {
+              const approved = compliancePayments.filter(p => p.approved).length;
+              const rejected = compliancePayments.filter(p => !p.approved).length;
+              const withIssues = compliancePayments.filter(p => p.messages.length > 0).length;
+
+              return (
+                <div className="compliance-summary">
+                  <div className="compliance-summary-item">
+                    <span className="compliance-summary-label">Всего проверено:</span>
+                    <span className="compliance-summary-value">{compliancePayments.length}</span>
+                  </div>
+                  <div className="compliance-summary-item success">
+                    <span className="compliance-summary-label">Одобрено:</span>
+                    <span className="compliance-summary-value">{approved}</span>
+                  </div>
+                  <div className="compliance-summary-item error">
+                    <span className="compliance-summary-label">Отклонено:</span>
+                    <span className="compliance-summary-value">{rejected}</span>
+                  </div>
+                  {withIssues > 0 && (
+                    <div className="compliance-summary-item warning">
+                      <span className="compliance-summary-label">С замечаниями:</span>
+                      <span className="compliance-summary-value">{withIssues}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="compliance-details">
+              {compliancePayments.map((item) => {
+                const recipient = deal?.recipients.find(r => r.number === item.number);
+                const recipientType = recipient ? RECIPIENT_TYPE_LABELS[recipient.type] : null;
+                const recipientAmount = recipient ? formatAmount(recipient.amount) : null;
+
+                return (
+                  <div key={item.number} className={`compliance-detail-item ${!item.approved ? 'rejected' : ''}`}>
+                    <div className="compliance-detail-header">
+                      <div className="compliance-detail-title-block">
+                        <span className="compliance-detail-title">Получатель #{item.number}</span>
+                        {recipientType && (
+                          <span className="compliance-detail-subtitle">{recipientType} · {recipientAmount}</span>
+                        )}
+                      </div>
+                      <span className={`compliance-detail-badge ${item.approved ? 'approved' : 'rejected'}`}>
+                        {item.approved ? '✓ Одобрено' : '✗ Отклонено'}
+                      </span>
+                    </div>
+                    {item.messages.length > 0 ? (
+                      <div className="compliance-detail-messages">
+                        {item.messages.map((message, index) => (
+                          <div
+                            key={`${message.level}-${index}`}
+                            className={`compliance-detail-message ${message.level.toLowerCase()}`}
+                          >
+                            <span className="compliance-detail-level">{message.level}</span>
+                            <span className="compliance-detail-text">{message.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="compliance-detail-ok">Проверка пройдена без замечаний</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <p className="modal-text">Комплаенс не вернул данных по платежам сделки.</p>
+        )}
+      </Modal>
 
       <Modal
         open={executeModalOpen}
@@ -707,6 +1362,15 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
           color: var(--text-secondary);
         }
 
+        .compliance-clickable {
+          cursor: pointer;
+          border: none;
+        }
+
+        .compliance-clickable:hover {
+          filter: brightness(0.98);
+        }
+
         .deal-status-badge.status-new {
           background: var(--bg-tertiary);
         }
@@ -776,6 +1440,92 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
 
         .payer-documents {
           margin-top: 20px;
+        }
+
+        .documents-card .card-header {
+          align-items: flex-start;
+          gap: 16px;
+        }
+
+        .doc-skeleton {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+
+        .doc-skeleton .skeleton-line {
+          height: 12px;
+          background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
+          border-radius: 6px;
+          width: 60%;
+        }
+
+        .doc-skeleton .skeleton-line.short {
+          width: 40%;
+        }
+
+        .doc-error {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 14px;
+          background: var(--color-error-bg);
+          color: var(--color-error);
+          border-radius: 10px;
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
+
+        .documents-empty {
+          font-size: 13px;
+          color: var(--text-tertiary);
+          padding: 4px 0 12px;
+        }
+
+        .deal-documents-list {
+          margin-bottom: 16px;
+        }
+
+        .deal-documents-upload {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-top: 12px;
+        }
+
+        .file-info {
+          margin-top: 6px;
+          font-size: 12px;
+          color: var(--text-tertiary);
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .doc-pending {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 12px;
+          background: var(--bg-secondary);
+          border-radius: 10px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin-top: 8px;
+        }
+
+        @keyframes shimmer {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
         }
 
         .section-subtitle {
@@ -946,6 +1696,195 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
           color: var(--color-warning);
         }
 
+        .compliance-error-container {
+          display: flex;
+          gap: 12px;
+          padding: 16px;
+          background: var(--color-error-bg);
+          border-radius: 10px;
+          border: 1px solid var(--color-error);
+        }
+
+        .compliance-error-icon {
+          font-size: 24px;
+          line-height: 1;
+        }
+
+        .compliance-error-content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .compliance-error-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--color-error);
+        }
+
+        .compliance-error-message {
+          font-size: 13px;
+          color: var(--text-secondary);
+        }
+
+        .compliance-summary {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 10px;
+          padding: 14px;
+          background: var(--bg-secondary);
+          border-radius: 10px;
+          margin-bottom: 16px;
+        }
+
+        .compliance-summary-item {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .compliance-summary-label {
+          font-size: 12px;
+          color: var(--text-tertiary);
+        }
+
+        .compliance-summary-value {
+          font-size: 18px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .compliance-summary-item.success .compliance-summary-value {
+          color: var(--color-success);
+        }
+
+        .compliance-summary-item.error .compliance-summary-value {
+          color: var(--color-error);
+        }
+
+        .compliance-summary-item.warning .compliance-summary-value {
+          color: var(--color-warning);
+        }
+
+        .compliance-details {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .compliance-detail-item {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding: 12px 14px;
+          background: var(--bg-secondary);
+          border-radius: 8px;
+          border: 2px solid transparent;
+        }
+
+        .compliance-detail-item.rejected {
+          border-color: var(--color-error);
+          background: var(--color-error-bg);
+        }
+
+        .compliance-detail-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .compliance-detail-title-block {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          flex: 1;
+        }
+
+        .compliance-detail-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .compliance-detail-subtitle {
+          font-size: 12px;
+          color: var(--text-tertiary);
+        }
+
+        .compliance-detail-badge {
+          font-size: 11px;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: 999px;
+          background: var(--bg-tertiary);
+          color: var(--text-secondary);
+        }
+
+        .compliance-detail-badge.approved {
+          background: var(--color-success-bg);
+          color: var(--color-success);
+        }
+
+        .compliance-detail-badge.rejected {
+          background: var(--color-error-bg);
+          color: var(--color-error);
+        }
+
+        .compliance-detail-messages {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .compliance-detail-message {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          padding: 10px 12px;
+          border-radius: 6px;
+          background: var(--bg-tertiary);
+          border-left: 3px solid var(--border-color);
+        }
+
+        .compliance-detail-message.error {
+          border-left-color: var(--color-error);
+          background: rgba(239, 68, 68, 0.1);
+        }
+
+        .compliance-detail-message.warning {
+          border-left-color: var(--color-warning);
+          background: rgba(251, 191, 36, 0.1);
+        }
+
+        .compliance-detail-ok {
+          font-size: 12px;
+          color: var(--color-success);
+          padding: 6px 10px;
+          background: var(--color-success-bg);
+          border-radius: 6px;
+        }
+
+        .compliance-detail-empty {
+          font-size: 12px;
+          color: var(--text-tertiary);
+        }
+
+        .compliance-detail-level {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--text-tertiary);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .compliance-detail-text {
+          font-size: 13px;
+          color: var(--text-primary);
+          line-height: 1.5;
+        }
+
         .modal-section {
           display: flex;
           flex-direction: column;
@@ -1000,6 +1939,34 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
           }
 
           .document-item {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .documents-card .card-header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .doc-pending {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .compliance-summary {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .compliance-detail-header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .compliance-detail-badge {
+            align-self: flex-start;
+          }
+
+          .compliance-error-container {
             flex-direction: column;
             align-items: flex-start;
           }

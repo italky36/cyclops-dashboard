@@ -9,6 +9,7 @@ import type {
   CreateDealResponse,
   ListDealsResponse,
   ComplianceCheckPayment,
+  ComplianceCheckDealResult,
 } from '@/types/cyclops/deals';
 
 // ============================================
@@ -114,7 +115,7 @@ interface UseDealReturn {
   executeDeal: (recipientNumbers?: number[]) => Promise<void>;
   rejectDeal: () => Promise<void>;
   cancelFromCorrection: () => Promise<void>;
-  checkCompliance: () => Promise<ComplianceCheckPayment[]>;
+  checkCompliance: () => Promise<ComplianceCheckDealResult>;
   updateDeal: (dealData: CreateDealParams) => Promise<void>;
 }
 
@@ -234,7 +235,7 @@ export function useDeal(dealId: string): UseDealReturn {
   }, [dealId, fetchDeal]);
 
   // Проверка комплаенс
-  const checkCompliance = useCallback(async (): Promise<ComplianceCheckPayment[]> => {
+  const checkCompliance = useCallback(async (): Promise<ComplianceCheckDealResult> => {
     setLoading(true);
     setError(null);
 
@@ -249,7 +250,15 @@ export function useDeal(dealId: string): UseDealReturn {
         throw new Error(data.error || 'Ошибка проверки комплаенс');
       }
 
-      return data.compliance_check_payments;
+      const payload = data?.result ?? data;
+      return {
+        approved: typeof payload?.approved === 'boolean' ? payload.approved : undefined,
+        status: typeof payload?.status === 'string' ? payload.status : undefined,
+        messages: Array.isArray(payload?.messages) ? payload.messages : [],
+        compliance_check_payments: Array.isArray(payload?.compliance_check_payments)
+          ? payload.compliance_check_payments
+          : [],
+      };
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
       throw e;

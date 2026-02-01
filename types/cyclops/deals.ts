@@ -250,6 +250,7 @@ export interface DealRecipientInfo {
  */
 export interface Deal {
   id: string;
+  beneficiary_id?: string;
   ext_key?: string;
   amount: number;
   status: DealStatus;
@@ -356,6 +357,16 @@ export interface ComplianceCheckPayment {
   number: number;
   approved: boolean;
   messages: ComplianceMessage[];
+}
+
+/**
+ * Результат комплаенс-проверки сделки
+ */
+export interface ComplianceCheckDealResult {
+  approved?: boolean;
+  status?: DealStatus | string;
+  messages?: ComplianceMessage[];
+  compliance_check_payments?: ComplianceCheckPayment[];
 }
 
 /**

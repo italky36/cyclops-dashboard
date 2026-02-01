@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { resolveDocumentMimeType } from '@/lib/cyclops-document-utils';
 import { 
   buildCreateBeneficiaryIpParams,
   buildCreateBeneficiaryFlParams,
@@ -594,7 +595,7 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
       per_page?: number;
       filters?: {
         beneficiary?: { id?: string };
-        deal?: { id?: string };
+        deal_id?: string;
         type?: string;
       };
     }) => {
@@ -644,6 +645,74 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
 
         if (!response.ok) {
           throw new Error(data?.error || 'Ошибка при загрузке документа');
+        }
+
+        return data as UploadDocumentResult;
+      })(),
+    [layer]
+  );
+
+  const uploadDocumentDeal = useCallback(
+    (params: {
+      beneficiary_id: string;
+      deal_id: string;
+      document_type: 'service_agreement' | string;
+      file: File;
+      document_date: string;
+      document_number: string;
+    }) =>
+      (async () => {
+        const contentType = resolveDocumentMimeType(params.file);
+        if (!contentType) {
+          throw new Error('Unsupported Content-Type');
+        }
+
+        const query = new URLSearchParams({
+          layer,
+          beneficiary_id: params.beneficiary_id,
+          deal_id: params.deal_id,
+          document_type: params.document_type,
+        });
+        query.set('document_date', params.document_date);
+        query.set('document_number', params.document_number);
+
+        const response = await fetch(`/api/cyclops/documents/deal/upload?${query.toString()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': contentType },
+          body: params.file,
+        });
+
+        const rawText = await response.text();
+        let data: unknown = null;
+        if (rawText) {
+          try {
+            data = JSON.parse(rawText);
+          } catch {
+            data = { raw: rawText };
+          }
+        }
+
+        if (!response.ok) {
+          const errorPayload = data && typeof data === 'object' && 'error' in data
+            ? (data as { error?: unknown }).error
+            : null;
+          if (errorPayload && typeof errorPayload === 'object') {
+            const errorData = errorPayload as { code?: unknown; message?: unknown };
+            const code = typeof errorData.code === 'number' ? errorData.code : null;
+            const message = typeof errorData.message === 'string'
+              ? errorData.message
+              : 'Ошибка при загрузке документа';
+            const errorMessage = code ? `${message} (код ${code})` : message;
+            const error = new Error(errorMessage) as Error & { code?: number };
+            if (code) error.code = code;
+            throw error;
+          }
+          const errorMessage =
+            (data && typeof data === 'object' && 'error' in data && String((data as { error?: unknown }).error)) ||
+            (data && typeof data === 'object' && 'message' in data && String((data as { message?: unknown }).message)) ||
+            (data && typeof data === 'object' && 'raw' in data && String((data as { raw?: unknown }).raw)) ||
+            'Ошибка при загрузке документа';
+          throw new Error(typeof errorMessage === 'string' ? errorMessage : 'Ошибка при загрузке документа');
         }
 
         return data as UploadDocumentResult;
@@ -715,6 +784,7 @@ export function useCyclops({ layer }: UseCyclopsOptions) {
     listDocuments,
     getDocument,
     uploadDocumentBeneficiary,
+    uploadDocumentDeal,
     // Утилиты
     echo,
     clearCache,
