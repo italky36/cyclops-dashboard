@@ -426,6 +426,7 @@ export function Sidebar() {
           font-weight: 700;
           color: var(--text-primary);
           letter-spacing: 1px;
+          text-decoration: none;
         }
 
         .logo-sub {
@@ -433,6 +434,7 @@ export function Sidebar() {
           color: var(--text-tertiary);
           text-transform: uppercase;
           letter-spacing: 1px;
+          text-decoration: none;
         }
 
         .close-btn {
