@@ -22,7 +22,16 @@ export function DealPayers({ payers }: DealPayersProps) {
                 <div className="payer-icon">💳</div>
                 <div className="payer-info">
                   <div className="payer-label">Виртуальный счёт</div>
-                  <div className="payer-account">{payer.virtual_account.slice(0, 8)}...</div>
+                  <button
+                    className="payer-account-copy"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(payer.virtual_account);
+                    }}
+                    title="Нажмите, чтобы скопировать"
+                  >
+                    {payer.virtual_account}
+                  </button>
                 </div>
                 <div className="payer-amount">{formatAmount(payer.amount)}</div>
               </div>
@@ -99,13 +108,28 @@ export function DealPayers({ payers }: DealPayersProps) {
           margin-bottom: 4px;
         }
 
-        .payer-account {
-          font-size: 14px;
+        .payer-account-copy {
+          font-size: 13px;
           font-weight: 600;
           color: var(--text-primary);
           font-family: 'Courier New', monospace;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          background: none;
+          border: none;
+          padding: 4px 8px;
+          margin: -4px -8px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 0.15s ease;
+          text-align: left;
+          word-break: break-all;
+        }
+
+        .payer-account-copy:hover {
+          background: var(--bg-tertiary);
+        }
+
+        .payer-account-copy:active {
+          background: var(--accent-bg);
         }
 
         .payer-amount {

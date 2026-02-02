@@ -19,13 +19,17 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'Cyclops Dashboard',
   description: 'Управление номинальным счётом Точка Банка',
+  manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
     title: 'Cyclops',
   },
   formatDetection: {
     telephone: false,
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
   },
 };
 
@@ -35,6 +39,10 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#0a0a0f' },
+  ],
 };
 
 export default function RootLayout({

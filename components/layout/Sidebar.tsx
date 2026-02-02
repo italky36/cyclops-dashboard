@@ -198,7 +198,7 @@ export function Sidebar() {
             <span className={`hamburger-line ${isOpen ? 'open' : ''}`} />
           </button>
 
-          <div className="mobile-logo">
+          <Link href="/" className="mobile-logo" onClick={closeMenu}>
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
               <circle cx="16" cy="16" r="14" fill="url(#logo-gradient-mobile)" />
               <path
@@ -214,7 +214,7 @@ export function Sidebar() {
               </defs>
             </svg>
             <span className="mobile-logo-text">Cyclops</span>
-          </div>
+          </Link>
 
           <div className="mobile-header-spacer" />
         </header>
@@ -232,7 +232,7 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside className={`sidebar ${isMobile ? 'mobile' : ''} ${isOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="logo">
+          <Link href="/" className="logo">
             <div className="logo-icon">
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
                 <circle cx="16" cy="16" r="14" fill="url(#logo-gradient)" />
@@ -253,7 +253,7 @@ export function Sidebar() {
               <span className="logo-name">Cyclops</span>
               <span className="logo-sub">Dashboard</span>
             </div>
-          </div>
+          </Link>
 
           {isMobile && (
             <button
@@ -364,6 +364,12 @@ export function Sidebar() {
           display: flex;
           align-items: center;
           gap: 8px;
+          text-decoration: none;
+          transition: opacity 0.15s ease;
+        }
+
+        .mobile-logo:hover {
+          opacity: 0.8;
         }
 
         .mobile-logo-text {
@@ -434,6 +440,12 @@ export function Sidebar() {
           display: flex;
           align-items: center;
           gap: 12px;
+          text-decoration: none;
+          transition: opacity 0.15s ease;
+        }
+
+        .logo:hover {
+          opacity: 0.8;
         }
 
         .logo-icon {

@@ -55,9 +55,16 @@ export function DealHeader({
             <div className="deal-info-compact">
               <div className="deal-id-group">
                 <span className="deal-id-label">Сделка</span>
-                <span className="deal-id-short" title={deal.id}>
-                  {deal.id.slice(0, 8)}...
-                </span>
+                <button
+                  className="deal-id-copy"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(deal.id);
+                  }}
+                  title="Нажмите, чтобы скопировать"
+                >
+                  {deal.id}
+                </button>
               </div>
               <button
                 type="button"
@@ -182,11 +189,26 @@ export function DealHeader({
           font-weight: 500;
         }
 
-        .deal-id-short {
+        .deal-id-copy {
           font-size: 14px;
           font-weight: 600;
           color: var(--text-primary);
           font-family: 'Courier New', monospace;
+          background: none;
+          border: none;
+          padding: 4px 8px;
+          margin: -4px -8px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 0.15s ease;
+        }
+
+        .deal-id-copy:hover {
+          background: var(--bg-tertiary);
+        }
+
+        .deal-id-copy:active {
+          background: var(--accent-bg);
         }
 
         .badge-status {
@@ -248,10 +270,10 @@ export function DealHeader({
         }
 
         @media (max-width: 600px) {
-          .deal-id-short {
-            max-width: 80px;
-            overflow: hidden;
-            text-overflow: ellipsis;
+          .deal-id-copy {
+            font-size: 11px;
+            word-break: break-all;
+            text-align: left;
           }
 
           .deal-header-actions {

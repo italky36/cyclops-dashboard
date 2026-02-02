@@ -1,0 +1,11 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="180" height="180" fill="url(#apple-gradient)" rx="40" />
+  <circle cx="90" cy="90" r="50" fill="none" stroke="white" stroke-width="8" />
+  <circle cx="90" cy="90" r="15" fill="white" />
+  <defs>
+    <linearGradient id="apple-gradient" x1="0" y1="0" x2="180" y2="180">
+      <stop stop-color="#6366f1" />
+      <stop offset="1" stop-color="#8b5cf6" />
+    </linearGradient>
+  </defs>
+</svg>
