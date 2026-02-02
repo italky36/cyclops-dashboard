@@ -512,6 +512,7 @@ body {
   .table-wrapper {
     margin: 0 calc(-1 * var(--spacing-md));
     padding: 0 var(--spacing-md);
+    overflow-x: visible;
   }
 
   .table-mobile-cards {
@@ -522,39 +523,62 @@ body {
     display: none;
   }
 
+  .table-mobile-cards tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
   .table-mobile-cards tbody tr {
     display: flex;
     flex-direction: column;
-    padding: var(--spacing-md);
-    margin-bottom: var(--spacing-sm);
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
+    padding: 14px 16px;
+    background: var(--bg-secondary);
+    border: none;
     border-radius: 12px;
+    gap: 0;
   }
 
   .table-mobile-cards tbody tr:hover {
-    background: var(--bg-primary);
+    background: var(--bg-tertiary);
   }
 
   .table-mobile-cards td {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--spacing-sm) 0;
+    padding: 6px 0;
     border-bottom: none;
+    font-size: 13px;
   }
 
   .table-mobile-cards td::before {
     content: attr(data-label);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--text-tertiary);
     text-transform: uppercase;
-    margin-right: var(--spacing-md);
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+
+  .table-mobile-cards td:first-child {
+    padding-top: 0;
   }
 
   .table-mobile-cards td:last-child {
     padding-bottom: 0;
+  }
+
+  .table-mobile-cards .code {
+    font-size: 11px;
+    word-break: break-all;
+    text-align: right;
+  }
+
+  .table-mobile-cards .money {
+    font-size: 14px;
+    font-weight: 600;
   }
 }
 

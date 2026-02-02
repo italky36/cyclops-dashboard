@@ -248,7 +248,7 @@ export default function DealsPage() {
       {/* Таблица */}
       <div className="card">
         <div className="table-wrapper">
-          <table className="table">
+          <table className="table table-mobile-cards">
             <thead>
               <tr>
                 <th>ID</th>
@@ -286,20 +286,29 @@ export default function DealsPage() {
               ) : (
                 deals.map((deal) => (
                   <tr key={deal.id} onClick={() => handleRowClick(deal.id)} className="clickable-row">
-                    <td>
-                      <span className="code">{deal.id.slice(0, 8)}...</span>
+                    <td data-label="ID">
+                      <button
+                        className="copy-id"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(deal.id);
+                        }}
+                        title="Нажмите, чтобы скопировать"
+                      >
+                        <span className="code">{deal.id}</span>
+                      </button>
                     </td>
-                    <td>
+                    <td data-label="Внешний ключ">
                       <span className="text-secondary">{deal.ext_key || '—'}</span>
                     </td>
-                    <td>
+                    <td data-label="Сумма">
                       <span className="money">{deal.amount !== undefined ? formatAmount(deal.amount) : '—'}</span>
                     </td>
-                    <td>{deal.status && <StatusBadge status={deal.status} />}</td>
-                    <td>
+                    <td data-label="Статус">{deal.status && <StatusBadge status={deal.status} />}</td>
+                    <td data-label="Создана">
                       <span className="text-secondary">{deal.created_at ? formatDate(deal.created_at) : '—'}</span>
                     </td>
-                    <td>
+                    <td data-label="Обновлена">
                       <span className="text-secondary">{deal.updated_at ? formatDate(deal.updated_at) : '—'}</span>
                     </td>
                   </tr>
@@ -408,6 +417,24 @@ export default function DealsPage() {
           background: var(--bg-hover);
         }
 
+        .copy-id {
+          background: none;
+          border: none;
+          padding: 4px 8px;
+          margin: -4px -8px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: background-color 0.15s ease;
+        }
+
+        .copy-id:hover {
+          background: var(--bg-tertiary);
+        }
+
+        .copy-id:active {
+          background: var(--accent-bg);
+        }
+
         .text-secondary {
           color: var(--text-secondary);
         }
@@ -485,42 +512,14 @@ export default function DealsPage() {
             justify-content: space-between;
           }
 
-          /* Преобразуем таблицу в карточки */
-          :global(.table thead) {
-            display: none;
+          .copy-id {
+            padding: 2px 4px;
+            margin: -2px -4px;
           }
 
-          :global(.table tbody tr) {
-            display: flex;
-            flex-direction: column;
-            padding: 16px;
-            margin-bottom: 8px;
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            gap: 8px;
-          }
-
-          :global(.table td) {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 4px 0;
-            border-bottom: none;
-          }
-
-          :global(.table td::before) {
-            content: attr(data-label);
-            font-weight: 500;
-            color: var(--text-tertiary);
-            font-size: 12px;
-          }
-
-          .empty-cell {
-            justify-content: center !important;
-          }
-
-          .empty-cell::before {
-            display: none;
+          .copy-id .code {
+            font-size: 11px;
+            word-break: break-all;
           }
         }
       `}</style>
