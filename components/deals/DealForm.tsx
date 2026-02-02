@@ -9,8 +9,7 @@ import type {
   ComplianceCheckPayment,
 } from '@/types/cyclops/deals';
 import { generateRecipientNumber, validateDealAmounts } from '@/lib/utils/deals';
-
-const ALLOWED_TEXT_REGEX = /^[ -~№А-яёЁ\t\n\r]*$/;
+import { CYCLOPS_ALLOWED_TEXT_REGEX, CYCLOPS_IDENTIFIER_REGEX, cleanOptionalFields } from '@/lib/utils/cyclops-text';
 
 const RECIPIENT_TYPES: Array<{ value: RecipientType; label: string }> = [
   { value: 'payment_contract', label: 'Оплата по договору' },
@@ -126,7 +125,7 @@ const formatCardNumber = (value: string) => {
 
 const normalizeCardNumber = (value: string) => value.replace(/\D/g, '').slice(0, 19); // До 19 цифр
 
-const isValidText = (value: string) => ALLOWED_TEXT_REGEX.test(value);
+const isValidText = (value: string) => CYCLOPS_ALLOWED_TEXT_REGEX.test(value);
 
 const ensureAllowedText = (value: string, label: string): string | null => {
   if (!value) return null;
@@ -315,8 +314,60 @@ function PaymentContractFields({
           type="number"
           className="form-input"
           placeholder="0"
+          min="0"
+          max="100"
+          step="0.01"
           value={recipient.purpose_nds ?? ''}
           onChange={(event) => onChange({ purpose_nds: Number(event.target.value) || undefined })}
+        />
+        <span className="form-hint">
+          Если не указано, будет добавлено &quot;без НДС&quot; в назначение платежа
+        </span>
+      </div>
+
+      <div className="grid grid-2">
+        <div className="form-group">
+          <label className="form-label">Номер документа</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="До 6 символов"
+            maxLength={6}
+            value={recipient.document_number || ''}
+            onChange={(event) => onChange({ document_number: event.target.value.slice(0, 6) })}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Код назначения платежа</label>
+          <select
+            className="form-input form-select"
+            value={recipient.code_purpose || ''}
+            onChange={(event) => {
+              const value = event.target.value;
+              onChange({
+                code_purpose: value ? (value as PaymentContractRecipientInput['code_purpose']) : undefined,
+              });
+            }}
+          >
+            <option value="">Не указан</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Уникальный идентификатор</label>
+        <input
+          type="text"
+          className="form-input"
+          placeholder="1-60 символов"
+          maxLength={60}
+          value={recipient.identifier || ''}
+          onChange={(event) => onChange({ identifier: event.target.value.slice(0, 60) })}
         />
       </div>
     </div>
@@ -894,6 +945,17 @@ export function DealForm({ initialData, onSubmit, submitLabel }: DealFormProps) 
             const purposeError = ensureAllowedText(recipient.purpose, 'Назначение платежа');
             if (purposeError) return `${purposeError} (получатель #${recipient.number})`;
           }
+          if (recipient.document_number && recipient.document_number.length > 6) {
+            return `Номер документа до 6 символов (получатель #${recipient.number})`;
+          }
+          if (recipient.identifier) {
+            if (!CYCLOPS_IDENTIFIER_REGEX.test(recipient.identifier)) {
+              return `Идентификатор содержит недопустимые символы (получатель #${recipient.number})`;
+            }
+          }
+          if (recipient.code_purpose && !['1', '2', '3', '4', '5'].includes(recipient.code_purpose)) {
+            return `Код назначения должен быть от 1 до 5 (получатель #${recipient.number})`;
+          }
           break;
         }
         case 'commission': {
@@ -1002,9 +1064,7 @@ export function DealForm({ initialData, onSubmit, submitLabel }: DealFormProps) 
 
           // Проверка идентификатора
           if (recipient.identifier) {
-            const identifierRegex =
-              /^[0-9A-Za-zА-Яа-яЁё\t\n\r\-\./:;=@\[\\]^_{}|~№]{1,60}$/;
-            if (!identifierRegex.test(recipient.identifier)) {
+            if (!CYCLOPS_IDENTIFIER_REGEX.test(recipient.identifier)) {
               return `Идентификатор содержит недопустимые символы (получатель #${recipient.number})`;
             }
           }
@@ -1058,15 +1118,21 @@ export function DealForm({ initialData, onSubmit, submitLabel }: DealFormProps) 
             middle_name: undefined,
           };
 
-          preparedRecipients.push({
+          preparedRecipients.push(cleanOptionalFields({
             ...rest,
             card_number_crypto_base64: encrypted,
             recipient_fio: recipientFio,
-          });
-        } else {
+          }) as DealRecipient);
+        } else if (recipient.type === 'payment_contract') {
+          // Для payment_contract очищаем пустые опциональные поля
           const { _card_number_plain: ignoredCardNumber, ...rest } = recipient;
           void ignoredCardNumber;
-          preparedRecipients.push(rest as DealRecipient);
+          preparedRecipients.push(cleanOptionalFields(rest) as DealRecipient);
+        } else {
+          // Для остальных типов также очищаем пустые поля
+          const { _card_number_plain: ignoredCardNumber, ...rest } = recipient;
+          void ignoredCardNumber;
+          preparedRecipients.push(cleanOptionalFields(rest) as DealRecipient);
         }
       }
 

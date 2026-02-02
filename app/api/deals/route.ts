@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCyclopsClient, getLayerFromRequest } from '@/lib/cyclops-helpers';
 import { listDealsParamsSchema, createDealParamsSchema } from '@/lib/validators/deals';
+import { cleanOptionalFields } from '@/lib/utils/cyclops-text';
 import type { ListDealsParams, DealStatus } from '@/types/cyclops/deals';
 
 // GET /api/deals — список сделок
@@ -71,11 +72,37 @@ export async function POST(request: NextRequest) {
     const validated = createDealParamsSchema.parse(body);
 
     const client = await getCyclopsClient(layer);
-    const result = await client.call('create_deal', validated);
+    const roundAmount = (value: number) => Math.round(value * 100) / 100;
+    const normalized = {
+      ...validated,
+      amount: roundAmount(validated.amount),
+      payers: validated.payers.map((payer) => ({
+        ...payer,
+        amount: roundAmount(payer.amount),
+      })),
+      recipients: validated.recipients.map((recipient) => cleanOptionalFields({
+        ...recipient,
+        amount: roundAmount(recipient.amount),
+      })),
+    };
+
+    if (process.env.NODE_ENV === 'development') {
+      console.info('[Cyclops] create_deal payload', normalized);
+    }
+
+    const result = await client.call('create_deal', normalized);
 
     if (result.error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[Cyclops] create_deal error', result.error);
+      }
       return NextResponse.json(
-        { error: result.error.message, code: result.error.code },
+        {
+          error: result.error.message,
+          code: result.error.code,
+          data: result.error.data,
+          meta: result.error.meta,
+        },
         { status: 400 }
       );
     }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDeal } from '@/hooks/useDeals';
 import type { DealRecipient, DealRecipientInfo } from '@/types/cyclops/deals';
+import { CYCLOPS_ALLOWED_TEXT_REGEX, normalizeOptionalText, cleanOptionalFields } from '@/lib/utils/cyclops-text';
 
 type RecipientType = 'payment_contract' | 'payment_contract_by_sbp' | 'payment_contract_by_sbp_v2' | 'payment_contract_to_card' | 'commission';
 
@@ -61,6 +62,16 @@ const normalizePhone = (value: string) => {
   if (!digits) return '';
   if (digits.startsWith('7')) return digits.slice(0, 11);
   return `7${digits}`.slice(0, 11);
+};
+
+const isAllowedText = (value: string) => CYCLOPS_ALLOWED_TEXT_REGEX.test(value);
+
+const ensureAllowedText = (value: string | undefined, label: string): string | null => {
+  if (!value) return null;
+  if (!isAllowedText(value)) {
+    return `Поле "${label}" содержит недопустимые символы`;
+  }
+  return null;
 };
 
 const mapRecipientToForm = (recipient: DealRecipientInfo): Recipient => {
@@ -276,10 +287,29 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
             setIsSubmitting(false);
             return;
           }
+          const nameError = ensureAllowedText(r.name, 'Наименование');
+          if (nameError) {
+            setError(`${nameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
           if (!r.inn || (r.inn.length !== 10 && r.inn.length !== 12)) {
             setError(`Введите корректный ИНН (10 или 12 цифр) для получателя #${index}`);
             setIsSubmitting(false);
             return;
+          }
+          if (r.purpose && r.purpose.length > 210) {
+            setError(`Назначение платежа до 210 символов (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose) {
+            const purposeError = ensureAllowedText(r.purpose, 'Назначение платежа');
+            if (purposeError) {
+              setError(`${purposeError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
           }
         }
 
@@ -299,12 +329,66 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
             setIsSubmitting(false);
             return;
           }
+          const firstNameError = ensureAllowedText(r.first_name, 'Имя');
+          if (firstNameError) {
+            setError(`${firstNameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          const lastNameError = ensureAllowedText(r.last_name, 'Фамилия');
+          if (lastNameError) {
+            setError(`${lastNameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.middle_name) {
+            const middleNameError = ensureAllowedText(r.middle_name, 'Отчество');
+            if (middleNameError) {
+              setError(`${middleNameError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
+          if (r.purpose && r.purpose.length > 140) {
+            setError(`Назначение платежа до 140 символов (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose) {
+            const purposeError = ensureAllowedText(r.purpose, 'Назначение платежа');
+            if (purposeError) {
+              setError(`${purposeError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
         }
 
         if (r.type === 'commission' && !r.name) {
           setError(`Введите наименование для комиссии #${index}`);
           setIsSubmitting(false);
           return;
+        }
+        if (r.type === 'commission') {
+          const nameError = ensureAllowedText(r.name, 'Наименование');
+          if (nameError) {
+            setError(`${nameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose && r.purpose.length > 210) {
+            setError(`Назначение платежа до 210 символов (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose) {
+            const purposeError = ensureAllowedText(r.purpose, 'Назначение платежа');
+            if (purposeError) {
+              setError(`${purposeError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
         }
       }
 
@@ -317,17 +401,17 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
 
         switch (r.type) {
           case 'payment_contract':
-            preparedRecipients.push({
+            preparedRecipients.push(cleanOptionalFields({
               type: 'payment_contract',
               number,
               amount,
               account: r.account!,
               bank_code: r.bank_code!,
-              name: r.name!,
+              name: r.name!.trim(),
               inn: r.inn!,
-              kpp: r.kpp,
-              purpose: r.purpose || 'Оплата по договору. НДС не облагается.',
-            });
+              kpp: normalizeOptionalText(r.kpp),
+              purpose: normalizeOptionalText(r.purpose),
+            }) as DealRecipient);
             break;
           case 'payment_contract_by_sbp':
             preparedRecipients.push({
@@ -336,10 +420,10 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
               amount,
               phone_number: r.phone_number!,
               bank_sbp_id: r.bank_sbp_id!,
-              first_name: r.first_name!,
-              middle_name: r.middle_name,
-              last_name: r.last_name!,
-              purpose: r.purpose,
+              first_name: r.first_name!.trim(),
+              middle_name: normalizeOptionalText(r.middle_name),
+              last_name: r.last_name!.trim(),
+              purpose: normalizeOptionalText(r.purpose),
             });
             break;
           case 'payment_contract_by_sbp_v2':
@@ -349,10 +433,10 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
               amount,
               phone_number: r.phone_number!,
               bank_sbp_id: r.bank_sbp_id!,
-              first_name: r.first_name!,
-              middle_name: r.middle_name,
-              last_name: r.last_name!,
-              purpose: r.purpose,
+              first_name: r.first_name!.trim(),
+              middle_name: normalizeOptionalText(r.middle_name),
+              last_name: r.last_name!.trim(),
+              purpose: normalizeOptionalText(r.purpose),
             });
             break;
           case 'payment_contract_to_card':
@@ -363,11 +447,11 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
               amount,
               card_number_crypto_base64: encryptedCard,
               recipient_fio: {
-                first_name: r.first_name!,
-                middle_name: r.middle_name,
-                last_name: r.last_name!,
+                first_name: r.first_name!.trim(),
+                middle_name: normalizeOptionalText(r.middle_name),
+                last_name: r.last_name!.trim(),
               },
-              purpose: r.purpose,
+              purpose: normalizeOptionalText(r.purpose),
             });
             break;
           case 'commission':
@@ -375,8 +459,8 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
               type: 'commission',
               number,
               amount,
-              name: r.name!,
-              purpose: r.purpose,
+              name: r.name!.trim(),
+              purpose: normalizeOptionalText(r.purpose),
             });
             break;
         }
@@ -580,7 +664,7 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
                         <input
                           type="text"
                           className="form-input"
-                          placeholder='ООО "Название" или ФИО'
+                          placeholder="ООО Название или ФИО"
                           value={recipient.name || ''}
                           onChange={(e) => updateRecipient(recipient.id, { name: e.target.value })}
                           required
@@ -615,7 +699,8 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
                         <label className="form-label">Назначение платежа</label>
                         <textarea
                           className="form-input form-textarea"
-                          placeholder="Оплата по договору №... НДС не облагается"
+                          placeholder="Оплата по договору N123. НДС не облагается"
+                          maxLength={210}
                           value={recipient.purpose || ''}
                           onChange={(e) => updateRecipient(recipient.id, { purpose: e.target.value })}
                         />
@@ -788,6 +873,7 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
                         <label className="form-label">Назначение платежа</label>
                         <textarea
                           className="form-input form-textarea"
+                          maxLength={210}
                           value={recipient.purpose || ''}
                           onChange={(e) => updateRecipient(recipient.id, { purpose: e.target.value })}
                           placeholder="Необязательно"

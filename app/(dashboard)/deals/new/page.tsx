@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
+import { CYCLOPS_ALLOWED_TEXT_REGEX, normalizeOptionalText } from '@/lib/utils/cyclops-text';
 
 type RecipientType = 'payment_contract' | 'payment_contract_by_sbp' | 'payment_contract_to_card' | 'commission';
 
@@ -43,6 +44,16 @@ const formatCardNumber = (value: string) => {
 };
 
 const normalizeCardNumber = (value: string) => value.replace(/\D/g, '').slice(0, 19);
+
+const isAllowedText = (value: string) => CYCLOPS_ALLOWED_TEXT_REGEX.test(value);
+
+const ensureAllowedText = (value: string | undefined, label: string): string | null => {
+  if (!value) return null;
+  if (!isAllowedText(value)) {
+    return `Поле "${label}" содержит недопустимые символы`;
+  }
+  return null;
+};
 
 export default function NewDealPage() {
   const router = useRouter();
@@ -154,17 +165,141 @@ export default function NewDealPage() {
     try {
       // Валидация номеров карт
       for (const r of recipients) {
+        const index = recipients.indexOf(r) + 1;
+
         if (r.type === 'payment_contract_to_card') {
           const cardLength = (r.card_number || '').length;
           if (cardLength < 13 || cardLength > 19) {
-            setError(`Номер карты должен содержать от 13 до 19 цифр (получатель #${recipients.indexOf(r) + 1})`);
+            setError(`Номер карты должен содержать от 13 до 19 цифр (получатель #${index})`);
             setIsSubmitting(false);
             return;
           }
           if (!r.first_name || !r.last_name) {
-            setError(`Укажите имя и фамилию получателя на карте (получатель #${recipients.indexOf(r) + 1})`);
+            setError(`Укажите имя и фамилию получателя на карте (получатель #${index})`);
             setIsSubmitting(false);
             return;
+          }
+          const firstNameError = ensureAllowedText(r.first_name, 'Имя');
+          if (firstNameError) {
+            setError(`${firstNameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          const lastNameError = ensureAllowedText(r.last_name, 'Фамилия');
+          if (lastNameError) {
+            setError(`${lastNameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.middle_name) {
+            const middleNameError = ensureAllowedText(r.middle_name, 'Отчество');
+            if (middleNameError) {
+              setError(`${middleNameError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
+        }
+
+        if (r.type === 'payment_contract') {
+          if (!r.account || r.account.length !== 20) {
+            setError(`Введите корректный номер счёта (20 цифр) для получателя #${index}`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (!r.bank_code || r.bank_code.length !== 9) {
+            setError(`Введите корректный БИК (9 цифр) для получателя #${index}`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (!r.name) {
+            setError(`Введите наименование получателя #${index}`);
+            setIsSubmitting(false);
+            return;
+          }
+          const nameError = ensureAllowedText(r.name, 'Наименование');
+          if (nameError) {
+            setError(`${nameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (!r.inn || (r.inn.length !== 10 && r.inn.length !== 12)) {
+            setError(`Введите корректный ИНН (10 или 12 цифр) для получателя #${index}`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose && r.purpose.length > 210) {
+            setError(`Назначение платежа до 210 символов (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose) {
+            const purposeError = ensureAllowedText(r.purpose, 'Назначение платежа');
+            if (purposeError) {
+              setError(`${purposeError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
+        }
+
+        if (r.type === 'payment_contract_by_sbp') {
+          if (!r.phone_number || r.phone_number.length !== 11) {
+            setError(`Введите корректный номер телефона для получателя #${index}`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (!r.bank_sbp_id) {
+            setError(`Выберите банк СБП для получателя #${index}`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (!r.first_name || !r.last_name) {
+            setError(`Укажите имя и фамилию получателя #${index}`);
+            setIsSubmitting(false);
+            return;
+          }
+          const firstNameError = ensureAllowedText(r.first_name, 'Имя');
+          if (firstNameError) {
+            setError(`${firstNameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          const lastNameError = ensureAllowedText(r.last_name, 'Фамилия');
+          if (lastNameError) {
+            setError(`${lastNameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.middle_name) {
+            const middleNameError = ensureAllowedText(r.middle_name, 'Отчество');
+            if (middleNameError) {
+              setError(`${middleNameError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
+        }
+
+        if (r.type === 'commission') {
+          const nameError = ensureAllowedText(r.name, 'Наименование');
+          if (nameError) {
+            setError(`${nameError} (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose && r.purpose.length > 210) {
+            setError(`Назначение платежа до 210 символов (получатель #${index})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (r.purpose) {
+            const purposeError = ensureAllowedText(r.purpose, 'Назначение платежа');
+            if (purposeError) {
+              setError(`${purposeError} (получатель #${index})`);
+              setIsSubmitting(false);
+              return;
+            }
           }
         }
       }
@@ -185,10 +320,10 @@ export default function NewDealPage() {
               ...base,
               account: r.account,
               bank_code: r.bank_code,
-              name: r.name,
+              name: r.name?.trim(),
               inn: r.inn,
-              kpp: r.kpp || undefined,
-              purpose: r.purpose || 'Оплата по договору. НДС не облагается.',
+              kpp: normalizeOptionalText(r.kpp),
+              purpose: normalizeOptionalText(r.purpose) || 'Оплата по договору. НДС не облагается.',
             });
             break;
           case 'payment_contract_by_sbp':
@@ -196,9 +331,9 @@ export default function NewDealPage() {
               ...base,
               phone_number: r.phone_number,
               bank_sbp_id: r.bank_sbp_id,
-              first_name: r.first_name,
-              middle_name: r.middle_name || undefined,
-              last_name: r.last_name,
+              first_name: r.first_name?.trim(),
+              middle_name: normalizeOptionalText(r.middle_name),
+              last_name: r.last_name?.trim(),
             });
             break;
           case 'payment_contract_to_card':
@@ -207,9 +342,9 @@ export default function NewDealPage() {
               ...base,
               card_number_crypto_base64: encryptedCard,
               recipient_fio: {
-                first_name: r.first_name,
-                middle_name: r.middle_name || undefined,
-                last_name: r.last_name,
+                first_name: r.first_name?.trim(),
+                middle_name: normalizeOptionalText(r.middle_name),
+                last_name: r.last_name?.trim(),
               },
             });
             break;
@@ -429,7 +564,7 @@ export default function NewDealPage() {
                         <input
                           type="text"
                           className="form-input"
-                          placeholder='ООО "Название" или ФИО'
+                          placeholder="ООО Название или ФИО"
                           value={recipient.name || ''}
                           onChange={(e) => updateRecipient(recipient.id, { name: e.target.value })}
                           required
@@ -462,7 +597,8 @@ export default function NewDealPage() {
                         <label className="form-label">Назначение платежа</label>
                         <textarea
                           className="form-input form-textarea"
-                          placeholder="Оплата по договору №... НДС не облагается"
+                          placeholder="Оплата по договору N123. НДС не облагается"
+                          maxLength={210}
                           value={recipient.purpose || ''}
                           onChange={(e) => updateRecipient(recipient.id, { purpose: e.target.value })}
                         />

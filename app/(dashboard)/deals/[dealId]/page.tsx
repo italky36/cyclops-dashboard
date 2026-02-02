@@ -19,6 +19,7 @@ import { DealDocuments } from './components/DealDocuments';
 
 const DEAL_DOCUMENT_POLL_INTERVAL_MS = 3000;
 const DEAL_DOCUMENT_POLL_TIMEOUT_MS = 90000;
+const DEAL_AUTO_REFRESH_INTERVAL_MS = 15000;
 
 function Modal({
   open,
@@ -110,6 +111,7 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [selectedRecipients, setSelectedRecipients] = useState<number[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const closeExecuteModal = () => {
     setExecuteModalOpen(false);
@@ -402,6 +404,14 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
     }
   };
 
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const intervalId = window.setInterval(() => {
+      fetchDeal();
+    }, DEAL_AUTO_REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [autoRefresh, fetchDeal]);
+
   if (loading && !deal) {
     return (
       <div className="deal-detail-page">
@@ -532,6 +542,9 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
         onCheckCompliance={handleCheckCompliance}
         onOpenComplianceModal={handleOpenComplianceModal}
         onEdit={() => router.push(`/deals/${dealId}/edit`)}
+        onRefresh={fetchDeal}
+        autoRefresh={autoRefresh}
+        onAutoRefreshChange={setAutoRefresh}
       />
 
       {error ? (

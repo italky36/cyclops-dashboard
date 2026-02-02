@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useDeals } from '@/hooks/useDeals';
+import { CopyButton } from '@/components/ui/CopyButton';
 import {
   DEAL_STATUS_LABELS,
   DEAL_STATUS_COLORS,
@@ -193,13 +194,26 @@ export default function DealsPage() {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
   const [filters, setFilters] = useState<ListDealsParams['filters']>({});
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const { deals, loading, error, meta, fetchDeals } = useDeals({ autoFetch: false });
 
   // Загрузка при изменении параметров
-  useEffect(() => {
+  const refreshDeals = useCallback(() => {
     fetchDeals({ page, per_page: perPage, filters });
-  }, [page, perPage, filters, fetchDeals]);
+  }, [fetchDeals, page, perPage, filters]);
+
+  useEffect(() => {
+    refreshDeals();
+  }, [refreshDeals]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const intervalId = window.setInterval(() => {
+      refreshDeals();
+    }, 15000);
+    return () => window.clearInterval(intervalId);
+  }, [autoRefresh, refreshDeals]);
 
   const handleApplyFilters = (newFilters: ListDealsParams['filters']) => {
     setFilters(newFilters);
@@ -223,13 +237,31 @@ export default function DealsPage() {
           <h1 className="page-title">Сделки</h1>
           <p className="page-description">Управление выплатами с номинального счёта</p>
         </div>
-        <Link href="/deals/create" className="btn btn-primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Создать сделку
-        </Link>
+        <div className="page-actions">
+          <button
+            onClick={refreshDeals}
+            className="btn btn-ghost btn-sm btn-icon"
+            title="Обновить"
+            aria-label="Обновить"
+          >
+            ↻
+          </button>
+          <label className="auto-refresh" title="Автообновление">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(event) => setAutoRefresh(event.target.checked)}
+            />
+            <span>Авто</span>
+          </label>
+          <Link href="/deals/create" className="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Создать сделку
+          </Link>
+        </div>
       </header>
 
       {/* Фильтры */}
@@ -287,16 +319,10 @@ export default function DealsPage() {
                 deals.map((deal) => (
                   <tr key={deal.id} onClick={() => handleRowClick(deal.id)} className="clickable-row">
                     <td data-label="ID">
-                      <button
-                        className="copy-id"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigator.clipboard.writeText(deal.id);
-                        }}
-                        title="Нажмите, чтобы скопировать"
-                      >
+                      <div className="id-cell">
                         <span className="code">{deal.id}</span>
-                      </button>
+                        <CopyButton text={deal.id} />
+                      </div>
                     </td>
                     <td data-label="Внешний ключ">
                       <span className="text-secondary">{deal.ext_key || '—'}</span>
@@ -370,6 +396,36 @@ export default function DealsPage() {
           justify-content: space-between;
         }
 
+        .page-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .btn-icon {
+          width: 32px;
+          height: 32px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          line-height: 1;
+        }
+
+        .auto-refresh {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .auto-refresh input {
+          accent-color: var(--accent-color);
+        }
+
         .error-banner {
           display: flex;
           align-items: center;
@@ -417,22 +473,10 @@ export default function DealsPage() {
           background: var(--bg-hover);
         }
 
-        .copy-id {
-          background: none;
-          border: none;
-          padding: 4px 8px;
-          margin: -4px -8px;
-          border-radius: 6px;
-          cursor: pointer;
-          transition: background-color 0.15s ease;
-        }
-
-        .copy-id:hover {
-          background: var(--bg-tertiary);
-        }
-
-        .copy-id:active {
-          background: var(--accent-bg);
+        .id-cell {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
         }
 
         .text-secondary {
@@ -498,7 +542,11 @@ export default function DealsPage() {
             gap: 16px;
           }
 
-          .page-header > a {
+          .page-actions {
+            flex-wrap: wrap;
+          }
+
+          .page-actions > a {
             width: 100%;
           }
 
@@ -512,12 +560,7 @@ export default function DealsPage() {
             justify-content: space-between;
           }
 
-          .copy-id {
-            padding: 2px 4px;
-            margin: -2px -4px;
-          }
-
-          .copy-id .code {
+          .id-cell .code {
             font-size: 11px;
             word-break: break-all;
           }

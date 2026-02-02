@@ -604,8 +604,11 @@ export interface RecipientPaymentContract extends RecipientBase {
   name: string;
   inn: string;
   kpp?: string;
-  purpose: string;
+  purpose?: string;
+  purpose_nds?: number;
   document_number?: string;
+  identifier?: string;
+  code_purpose?: '1' | '2' | '3' | '4' | '5';
 }
 
 export interface RecipientSBP extends RecipientBase {

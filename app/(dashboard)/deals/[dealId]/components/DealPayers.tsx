@@ -2,6 +2,7 @@
 
 import type { DealPayer } from '@/types/cyclops/deals';
 import { formatAmount } from '@/lib/utils/deals';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 interface DealPayersProps {
   payers: DealPayer[];
@@ -22,16 +23,10 @@ export function DealPayers({ payers }: DealPayersProps) {
                 <div className="payer-icon">💳</div>
                 <div className="payer-info">
                   <div className="payer-label">Виртуальный счёт</div>
-                  <button
-                    className="payer-account-copy"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigator.clipboard.writeText(payer.virtual_account);
-                    }}
-                    title="Нажмите, чтобы скопировать"
-                  >
-                    {payer.virtual_account}
-                  </button>
+                  <div className="payer-account-row">
+                    <span className="payer-account-value">{payer.virtual_account}</span>
+                    <CopyButton text={payer.virtual_account} />
+                  </div>
                 </div>
                 <div className="payer-amount">{formatAmount(payer.amount)}</div>
               </div>
@@ -108,28 +103,18 @@ export function DealPayers({ payers }: DealPayersProps) {
           margin-bottom: 4px;
         }
 
-        .payer-account-copy {
+        .payer-account-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .payer-account-value {
           font-size: 13px;
           font-weight: 600;
           color: var(--text-primary);
           font-family: 'Courier New', monospace;
-          background: none;
-          border: none;
-          padding: 4px 8px;
-          margin: -4px -8px;
-          border-radius: 6px;
-          cursor: pointer;
-          transition: background-color 0.15s ease;
-          text-align: left;
           word-break: break-all;
-        }
-
-        .payer-account-copy:hover {
-          background: var(--bg-tertiary);
-        }
-
-        .payer-account-copy:active {
-          background: var(--accent-bg);
         }
 
         .payer-amount {

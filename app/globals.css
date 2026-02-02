@@ -1023,6 +1023,16 @@ body {
   white-space: nowrap;
 }
 
+/* Sidebar logo should not be underlined */
+.sidebar .logo,
+.sidebar .logo:link,
+.sidebar .logo:visited,
+.sidebar .logo:hover,
+.sidebar .logo:active,
+.sidebar .logo * {
+  text-decoration: none;
+}
+
 @media (max-width: 767px) {
   .hide-mobile {
     display: none !important;

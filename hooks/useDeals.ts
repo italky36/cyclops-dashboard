@@ -339,7 +339,22 @@ export function useCreateDeal(): UseCreateDealReturn {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Ошибка создания сделки');
+        const baseMessage = data?.error || 'Ошибка создания сделки';
+        const codeSuffix = data?.code ? ` (code ${data.code})` : '';
+        const detailsList = Array.isArray(data?.details)
+          ? (data.details as Array<{ path?: Array<string | number>; message?: string }>)
+          : [];
+        const details = detailsList.length > 0
+          ? detailsList.map((issue) => {
+              const path = Array.isArray(issue?.path) ? issue.path.join('.') : '';
+              return path ? `${path}: ${issue.message ?? ''}` : `${issue.message ?? ''}`;
+            }).join('; ')
+          : '';
+        const extra = data?.data || data?.meta
+          ? ` | details: ${JSON.stringify({ data: data?.data, meta: data?.meta })}`
+          : '';
+        const message = `${baseMessage}${codeSuffix}${details ? ` | ${details}` : ''}${extra}`;
+        throw new Error(message);
       }
 
       const payload = data?.result ?? data;

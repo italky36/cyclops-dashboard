@@ -408,6 +408,17 @@ export function Sidebar() {
           transition: opacity 0.15s ease;
         }
 
+        .logo:link,
+        .logo:visited,
+        .logo:hover,
+        .logo:active {
+          text-decoration: none;
+        }
+
+        .logo * {
+          text-decoration: none;
+        }
+
         .logo:hover {
           opacity: 0.8;
         }
@@ -419,10 +430,12 @@ export function Sidebar() {
         .logo-text {
           display: flex;
           flex-direction: column;
+          align-items: flex-start;
+          gap: 2px;
         }
 
         .logo-name {
-          font-size: 20px;
+          font-size: 18px;
           font-weight: 700;
           color: var(--text-primary);
           letter-spacing: 1px;

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import type { Deal } from '@/types/cyclops/deals';
 import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS, formatAmount } from '@/lib/utils/deals';
+import { CopyButton } from '@/components/ui/CopyButton';
 
 interface DealHeaderProps {
   deal: Deal;
@@ -13,6 +14,9 @@ interface DealHeaderProps {
   onCheckCompliance?: () => void;
   onOpenComplianceModal?: () => void;
   onEdit?: () => void;
+  onRefresh?: () => void;
+  autoRefresh?: boolean;
+  onAutoRefreshChange?: (value: boolean) => void;
   loading?: boolean;
   actions: {
     canExecute: boolean;
@@ -31,6 +35,9 @@ export function DealHeader({
   onCheckCompliance,
   onOpenComplianceModal,
   onEdit,
+  onRefresh,
+  autoRefresh = false,
+  onAutoRefreshChange,
   loading = false,
   actions,
 }: DealHeaderProps) {
@@ -55,16 +62,8 @@ export function DealHeader({
             <div className="deal-info-compact">
               <div className="deal-id-group">
                 <span className="deal-id-label">Сделка</span>
-                <button
-                  className="deal-id-copy"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(deal.id);
-                  }}
-                  title="Нажмите, чтобы скопировать"
-                >
-                  {deal.id}
-                </button>
+                <span className="deal-id-value">{deal.id}</span>
+                <CopyButton text={deal.id} />
               </div>
               <button
                 type="button"
@@ -74,6 +73,31 @@ export function DealHeader({
               >
                 {DEAL_STATUS_LABELS[deal.status]}
               </button>
+              {(onRefresh || onAutoRefreshChange) && (
+                <div className="refresh-group">
+                  {onRefresh && (
+                    <button
+                      onClick={onRefresh}
+                      className="btn btn-ghost btn-sm btn-icon"
+                      title="Обновить"
+                      disabled={loading}
+                      aria-label="Обновить"
+                    >
+                      ↻
+                    </button>
+                  )}
+                  {onAutoRefreshChange && (
+                    <label className="auto-refresh" title="Автообновление">
+                      <input
+                        type="checkbox"
+                        checked={autoRefresh}
+                        onChange={(event) => onAutoRefreshChange(event.target.checked)}
+                      />
+                      <span>Авто</span>
+                    </label>
+                  )}
+                </div>
+              )}
               <div className="deal-amount-compact">
                 {formatAmount(deal.amount)}
               </div>
@@ -189,26 +213,11 @@ export function DealHeader({
           font-weight: 500;
         }
 
-        .deal-id-copy {
+        .deal-id-value {
           font-size: 14px;
           font-weight: 600;
           color: var(--text-primary);
           font-family: 'Courier New', monospace;
-          background: none;
-          border: none;
-          padding: 4px 8px;
-          margin: -4px -8px;
-          border-radius: 6px;
-          cursor: pointer;
-          transition: background-color 0.15s ease;
-        }
-
-        .deal-id-copy:hover {
-          background: var(--bg-tertiary);
-        }
-
-        .deal-id-copy:active {
-          background: var(--accent-bg);
         }
 
         .badge-status {
@@ -244,6 +253,36 @@ export function DealHeader({
           white-space: nowrap;
         }
 
+        .refresh-group {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .btn-icon {
+          width: 32px;
+          height: 32px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          line-height: 1;
+        }
+
+        .auto-refresh {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .auto-refresh input {
+          accent-color: var(--accent-color);
+        }
+
         @media (max-width: 900px) {
           .deal-header-container {
             flex-direction: column;
@@ -267,13 +306,16 @@ export function DealHeader({
             flex: 1;
             min-width: fit-content;
           }
+
+          .refresh-group {
+            width: 100%;
+          }
         }
 
         @media (max-width: 600px) {
-          .deal-id-copy {
+          .deal-id-value {
             font-size: 11px;
             word-break: break-all;
-            text-align: left;
           }
 
           .deal-header-actions {
@@ -282,6 +324,10 @@ export function DealHeader({
 
           .deal-header-actions .btn {
             width: 100%;
+          }
+
+          .refresh-group {
+            justify-content: space-between;
           }
         }
       `}</style>

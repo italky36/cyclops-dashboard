@@ -3,18 +3,22 @@
  */
 
 import { z } from 'zod';
+import {
+  CYCLOPS_ALLOWED_TEXT_REGEX,
+  CYCLOPS_IDENTIFIER_REGEX,
+} from '@/lib/utils/cyclops-text';
 
 // ==================== Регулярные выражения ====================
 
 /**
  * Допустимые символы для текстовых полей
  */
-const ALLOWED_TEXT_REGEX = /^[ -~№А-яёЁ\t\n\r]*$/;
+const ALLOWED_TEXT_REGEX = CYCLOPS_ALLOWED_TEXT_REGEX;
 
 /**
  * Идентификатор: цифры, буквы (латиница/кириллица), спецсимволы
  */
-const IDENTIFIER_REGEX = /^[0-9A-Za-zА-яЁё\t\n\r \-\/:\-@\[\-`\{-~№]{1,60}$/;
+const IDENTIFIER_REGEX = CYCLOPS_IDENTIFIER_REGEX;
 
 // ==================== Базовые схемы ====================
 
@@ -103,13 +107,15 @@ export const identifierSchema = z.string()
  * Назначение платежа для СБП: до 140 символов
  */
 export const purposeSbpSchema = z.string()
-  .max(140, 'Назначение платежа для СБП может содержать максимум 140 символов');
+  .max(140, 'Назначение платежа для СБП может содержать максимум 140 символов')
+  .regex(ALLOWED_TEXT_REGEX, 'Назначение платежа содержит недопустимые символы');
 
 /**
  * Назначение платежа стандартное: до 210 символов
  */
 export const purposeSchema = z.string()
-  .max(210, 'Назначение платежа может содержать максимум 210 символов');
+  .max(210, 'Назначение платежа может содержать максимум 210 символов')
+  .regex(ALLOWED_TEXT_REGEX, 'Назначение платежа содержит недопустимые символы');
 
 /**
  * Дата в формате YYYY-MM-DD
