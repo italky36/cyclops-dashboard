@@ -88,6 +88,11 @@ export default function RootLayout({
             `,
           }}
         />
+      </head>
+      <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
+        <div id="__loading">
+          <div id="__loading-spinner" />
+        </div>
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -105,11 +110,6 @@ export default function RootLayout({
             `,
           }}
         />
-      </head>
-      <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
-        <div id="__loading">
-          <div id="__loading-spinner" />
-        </div>
         {children}
       </body>
     </html>
