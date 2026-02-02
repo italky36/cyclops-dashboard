@@ -449,7 +449,7 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
                 <option value="">Выберите счёт</option>
                 {virtualAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.id.slice(0, 8)}...
+                    {account.id}
                     {typeof account.balance === 'number' ? ` — ${formatMoney(account.balance)}` : ''}
                   </option>
                 ))}
