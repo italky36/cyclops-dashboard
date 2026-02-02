@@ -107,6 +107,7 @@ export function DealPayers({ payers }: DealPayersProps) {
           display: flex;
           align-items: center;
           gap: 6px;
+          flex-wrap: wrap;
         }
 
         .payer-account-value {
@@ -115,6 +116,7 @@ export function DealPayers({ payers }: DealPayersProps) {
           color: var(--text-primary);
           font-family: 'Courier New', monospace;
           word-break: break-all;
+          min-width: 0;
         }
 
         .payer-amount {

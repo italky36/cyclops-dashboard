@@ -56,8 +56,10 @@ export function DealHeader({
       <div className="deal-header-sticky">
         <div className="deal-header-container">
           <div className="deal-header-left">
-            <button onClick={handleBack} className="btn-back" title="Назад к списку">
-              ←
+            <button onClick={handleBack} className="btn-back" title="Назад к списку" aria-label="Назад">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
             <div className="deal-info-compact">
               <div className="deal-id-group">
@@ -160,6 +162,7 @@ export function DealHeader({
           justify-content: space-between;
           gap: 16px;
           max-width: 1200px;
+          width: 100%;
           margin: 0 auto;
         }
 
@@ -205,12 +208,11 @@ export function DealHeader({
           display: flex;
           align-items: center;
           gap: 6px;
+          min-width: 0;
         }
 
         .deal-id-label {
-          font-size: 12px;
-          color: var(--text-tertiary);
-          font-weight: 500;
+          display: none;
         }
 
         .deal-id-value {
@@ -308,14 +310,54 @@ export function DealHeader({
           }
 
           .refresh-group {
-            width: 100%;
+            width: auto;
           }
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 767px) {
+          .deal-header-sticky {
+            margin: 0 0 var(--spacing-md);
+          }
+
+          .deal-info-compact {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+          }
+
+          .deal-id-group {
+            width: 100%;
+            max-width: 100%;
+          }
+
+          .deal-id-label {
+            display: none;
+          }
+
           .deal-id-value {
             font-size: 11px;
-            word-break: break-all;
+            flex: 1;
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            word-break: normal;
+            display: block;
+          }
+
+          .deal-amount-compact {
+            order: 2;
+            width: 100%;
+            margin-left: 0;
+          }
+
+          .badge-status {
+            order: 3;
+            width: fit-content;
+            white-space: normal;
+            font-size: 11px;
+            padding: 3px 8px;
           }
 
           .deal-header-actions {
@@ -324,11 +366,16 @@ export function DealHeader({
 
           .deal-header-actions .btn {
             width: 100%;
+            min-width: 0;
           }
 
           .refresh-group {
-            justify-content: space-between;
+            justify-content: flex-start;
+            order: 4;
+            width: auto;
+            gap: 6px;
           }
+
         }
       `}</style>
     </>

@@ -3,12 +3,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCyclops } from '@/hooks/useCyclops';
+import { AnalyticsChart } from '@/components/charts/AnalyticsChart';
+
+const ANALYTICS_DAYS_OPTIONS = [7, 14, 30, 60, 90];
 
 export default function DashboardPage() {
   const layer = useAppStore((s) => s.layer);
   const setConnectionStatus = useAppStore((s) => s.setConnectionStatus);
   const connectionStatus = useAppStore((s) => s.connectionStatus);
   const recentActions = useAppStore((s) => s.recentActions);
+  const [analyticsDays, setAnalyticsDays] = useState(30);
   
   const {
     echo,
@@ -108,6 +112,19 @@ export default function DashboardPage() {
     loadStats();
   }, [loadStats]);
 
+  useEffect(() => {
+    const stored = window.localStorage.getItem('analytics_days');
+    if (!stored) return;
+    const parsed = Number(stored);
+    if (Number.isFinite(parsed) && ANALYTICS_DAYS_OPTIONS.includes(parsed)) {
+      setAnalyticsDays(parsed);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem('analytics_days', String(analyticsDays));
+  }, [analyticsDays]);
+
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {
       style: 'currency',
@@ -186,6 +203,28 @@ export default function DashboardPage() {
             <span className="badge badge-warning">Требует действия</span>
           )}
         </div>
+      </div>
+
+      {/* Analytics Chart */}
+      <div className="card analytics-chart-card">
+        <div className="card-header">
+          <h2 className="card-title">Аналитика платежей и выплат</h2>
+          <label className="chart-period">
+            <span>Период</span>
+            <select
+              value={analyticsDays}
+              onChange={(event) => setAnalyticsDays(Number(event.target.value))}
+              className="chart-period-select"
+            >
+              {ANALYTICS_DAYS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  Последние {option} дней
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <AnalyticsChart layer={layer} days={analyticsDays} />
       </div>
 
       {/* Quick Actions */}
@@ -329,6 +368,34 @@ export default function DashboardPage() {
           margin-bottom: 24px;
         }
 
+        .analytics-chart-card {
+          margin-bottom: 24px;
+        }
+
+        .chart-period {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 13px;
+          color: var(--text-tertiary);
+          font-weight: 400;
+        }
+
+        .chart-period-select {
+          border: 1px solid var(--border-color);
+          background: var(--bg-primary);
+          color: var(--text-secondary);
+          border-radius: 8px;
+          padding: 6px 10px;
+          font-size: 12px;
+          cursor: pointer;
+        }
+
+        .chart-period-select:focus {
+          outline: none;
+          border-color: var(--accent-color);
+        }
+
         .quick-actions {
           margin-bottom: 24px;
         }
@@ -456,6 +523,17 @@ export default function DashboardPage() {
 
           .stats-grid {
             margin-bottom: 16px;
+          }
+
+          .analytics-chart-card {
+            margin-bottom: 16px;
+          }
+
+          .chart-period {
+            font-size: 12px;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
           }
 
           .quick-actions {

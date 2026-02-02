@@ -811,6 +811,12 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
           padding-bottom: 40px;
         }
 
+        @media (max-width: 767px) {
+          .deal-detail-page {
+            overflow-x: hidden;
+          }
+        }
+
         .error-banner {
           display: flex;
           align-items: center;
@@ -852,6 +858,7 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
           font-weight: 600;
           color: var(--text-primary);
           font-family: 'Courier New', monospace;
+          word-break: break-all;
         }
 
         .compliance-error-container {

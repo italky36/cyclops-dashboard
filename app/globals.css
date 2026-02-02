@@ -113,6 +113,7 @@ body {
   margin-left: var(--sidebar-width);
   padding: var(--spacing-xl);
   min-height: 100vh;
+  min-width: 0;
 }
 
 /* Mobile Layout */
@@ -122,6 +123,7 @@ body {
     padding: var(--spacing-md);
     padding-top: calc(var(--header-height-mobile) + var(--spacing-md));
     padding-bottom: calc(var(--spacing-xl) + var(--sab, 0px));
+    overflow-x: hidden;
   }
 }
 

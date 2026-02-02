@@ -347,6 +347,7 @@ export function DealRecipients({ recipients, dealStatus, selectedRecipients, onS
         .recipients-table {
           width: 100%;
           border-collapse: collapse;
+          table-layout: fixed;
         }
 
         .recipients-table thead {
@@ -362,6 +363,7 @@ export function DealRecipients({ recipients, dealStatus, selectedRecipients, onS
           text-transform: uppercase;
           letter-spacing: 0.5px;
           border-bottom: 2px solid var(--border-color);
+          word-break: break-word;
         }
 
         .th-checkbox {
@@ -417,6 +419,7 @@ export function DealRecipients({ recipients, dealStatus, selectedRecipients, onS
           padding: 14px 12px;
           font-size: 14px;
           color: var(--text-primary);
+          word-break: break-word;
         }
 
         .td-checkbox,
@@ -524,6 +527,10 @@ export function DealRecipients({ recipients, dealStatus, selectedRecipients, onS
           .td-preview {
             display: none;
           }
+
+          .recipients-table-container {
+            overflow-x: hidden;
+          }
         }
 
         @media (max-width: 600px) {
@@ -544,6 +551,13 @@ export function DealRecipients({ recipients, dealStatus, selectedRecipients, onS
           .th-type,
           .td-type {
             display: none;
+          }
+
+          .th-number,
+          .th-amount,
+          .th-status,
+          .th-actions {
+            min-width: 0;
           }
         }
       `}</style>
