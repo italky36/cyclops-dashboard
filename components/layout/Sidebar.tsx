@@ -198,24 +198,6 @@ export function Sidebar() {
             <span className={`hamburger-line ${isOpen ? 'open' : ''}`} />
           </button>
 
-          <Link href="/" className="mobile-logo" onClick={closeMenu}>
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-              <circle cx="16" cy="16" r="14" fill="url(#logo-gradient-mobile)" />
-              <path
-                d="M16 8C11.6 8 8 11.6 8 16s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8zm0 14c-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6-2.7 6-6 6z"
-                fill="white"
-              />
-              <circle cx="16" cy="16" r="3" fill="white" />
-              <defs>
-                <linearGradient id="logo-gradient-mobile" x1="2" y1="2" x2="30" y2="30">
-                  <stop stopColor="#6366f1" />
-                  <stop offset="1" stopColor="#8b5cf6" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <span className="mobile-logo-text">Cyclops</span>
-          </Link>
-
           <div className="mobile-header-spacer" />
         </header>
       )}
@@ -360,24 +342,6 @@ export function Sidebar() {
           transform: rotate(-45deg) translate(3.5px, -3.5px);
         }
 
-        .mobile-logo {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          text-decoration: none;
-          transition: opacity 0.15s ease;
-        }
-
-        .mobile-logo:hover {
-          opacity: 0.8;
-        }
-
-        .mobile-logo-text {
-          font-size: 18px;
-          font-weight: 700;
-          color: var(--text-primary);
-        }
-
         .mobile-header-spacer {
           flex: 1;
         }
@@ -458,10 +422,10 @@ export function Sidebar() {
         }
 
         .logo-name {
-          font-size: 18px;
+          font-size: 20px;
           font-weight: 700;
           color: var(--text-primary);
-          letter-spacing: -0.5px;
+          letter-spacing: 1px;
         }
 
         .logo-sub {
