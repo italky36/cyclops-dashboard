@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import type { DealRecipientInfo, DealStatus } from '@/types/cyclops/deals';
 import { RECIPIENT_TYPE_LABELS, formatAmount } from '@/lib/utils/deals';
 
@@ -237,8 +237,8 @@ export function DealRecipients({ recipients, dealStatus, selectedRecipients, onS
                 </tr>
               ) : (
                 filteredRecipients.map((recipient) => (
-                  <>
-                    <tr key={recipient.number} className={`recipient-row status-${recipient.status}`}>
+                  <Fragment key={recipient.number}>
+                    <tr className={`recipient-row status-${recipient.status}`}>
                       {canSelect && dealStatus === 'partial' && (
                         <td className="td-checkbox">
                           <input
@@ -294,7 +294,7 @@ export function DealRecipients({ recipients, dealStatus, selectedRecipients, onS
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))
               )}
             </tbody>

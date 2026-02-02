@@ -58,10 +58,23 @@ const mapRecipientRequisites = (recipient: DealRecipientInfo): DealRecipient => 
         type: recipient.type,
         number: recipient.number,
         amount: recipient.amount,
-        card_number_crypto_base64: String(requisites.card_number_crypto_base64 || ''),
+        card_number_crypto_base64: String(
+          requisites.card_number_crypto_base64 || "",
+        ),
+        recipient_fio: {
+          first_name: String(requisites.first_name || ""),
+          last_name: String(requisites.last_name || ""),
+          middle_name: requisites.middle_name
+            ? String(requisites.middle_name)
+            : undefined,
+        },
         purpose: requisites.purpose ? String(requisites.purpose) : undefined,
-        document_number: requisites.document_number ? String(requisites.document_number) : undefined,
-        identifier: requisites.identifier ? String(requisites.identifier) : undefined,
+        document_number: requisites.document_number
+          ? String(requisites.document_number)
+          : undefined,
+        identifier: requisites.identifier
+          ? String(requisites.identifier)
+          : undefined,
         inn: requisites.inn ? String(requisites.inn) : undefined,
       };
     case 'ndfl_to_virtual_account':

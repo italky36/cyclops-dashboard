@@ -82,7 +82,18 @@ export function encryptCardNumber(cardNumber: string, publicKeyPem: string): str
   return encrypted.toString('base64');
 }
 
-// RSA публичные ключи Cyclops для шифрования карт
+/**
+ * RSA публичные ключи Cyclops для шифрования данных карт
+ *
+ * ВАЖНО: Эти ключи должны быть получены от технической поддержки Точка Банк.
+ * Для использования добавьте их в переменные окружения:
+ * - CYCLOPS_CARD_PUBLIC_KEY_PRE - для pre окружения
+ * - CYCLOPS_CARD_PUBLIC_KEY_PROD - для prod окружения
+ *
+ * Формат: PEM (-----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----)
+ *
+ * Если ключи не указаны в переменных окружения, будут использованы значения ниже.
+ */
 export const CYCLOPS_CARD_PUBLIC_KEYS = {
   pre: `-----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA...

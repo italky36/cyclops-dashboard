@@ -119,12 +119,12 @@ const normalizePhone = (value: string) => {
 };
 
 const formatCardNumber = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 16);
+  const digits = value.replace(/\D/g, "").slice(0, 19); // До 19 цифр
   const parts = digits.match(/.{1,4}/g) || [];
-  return parts.join(' ');
+  return parts.join(" ");
 };
 
-const normalizeCardNumber = (value: string) => value.replace(/\D/g, '').slice(0, 16);
+const normalizeCardNumber = (value: string) => value.replace(/\D/g, '').slice(0, 19); // До 19 цифр
 
 const isValidText = (value: string) => ALLOWED_TEXT_REGEX.test(value);
 
@@ -510,9 +510,64 @@ function CardFields({
 }) {
   const [cardNumber, setCardNumber] = useState(recipient._card_number_plain || '');
   const hasEncrypted = Boolean(recipient.card_number_crypto_base64);
+  const fio = recipient.recipient_fio || {
+    first_name: "",
+    last_name: "",
+    middle_name: "",
+  };
+
+  const handleFioChange = (
+    field: "first_name" | "last_name" | "middle_name",
+    value: string,
+  ) => {
+    onChange({
+      recipient_fio: {
+        ...fio,
+        [field]: value,
+      },
+    });
+  };
 
   return (
     <div className="stack stack-sm">
+      <div className="grid grid-3">
+        <div className="form-group">
+          <label className="form-label">Фамилия *</label>
+          <input
+            type="text"
+            className="form-input"
+            value={fio.last_name || ""}
+            onChange={(event) =>
+              handleFioChange("last_name", event.target.value)
+            }
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Имя *</label>
+          <input
+            type="text"
+            className="form-input"
+            value={fio.first_name || ""}
+            onChange={(event) =>
+              handleFioChange("first_name", event.target.value)
+            }
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Отчество</label>
+          <input
+            type="text"
+            className="form-input"
+            value={fio.middle_name || ""}
+            onChange={(event) =>
+              handleFioChange("middle_name", event.target.value)
+            }
+          />
+        </div>
+      </div>
+
       <div className="form-group">
         <label className="form-label">Номер карты *</label>
         <input
@@ -527,20 +582,77 @@ function CardFields({
           }}
           required={!hasEncrypted}
         />
-        <span className="form-hint">Номер карты будет зашифрован перед отправкой</span>
+        <span className="form-hint">
+          Номер карты (13-19 цифр) будет зашифрован перед отправкой
+        </span>
         {hasEncrypted ? (
-          <span className="form-hint">Оставьте поле пустым, чтобы сохранить текущий номер</span>
+          <span className="form-hint">
+            Оставьте поле пустым, чтобы сохранить текущий номер
+          </span>
         ) : null}
       </div>
 
+      <div className="grid grid-2">
+        <div className="form-group">
+          <label className="form-label">ИИН физлица (12 цифр)</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Опционально"
+            value={recipient.inn || ""}
+            maxLength={12}
+            onChange={(event) =>
+              onChange({
+                inn: event.target.value.replace(/\D/g, "").slice(0, 12),
+              })
+            }
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Номер документа (до 6 символов)</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Опционально"
+            value={recipient.document_number || ""}
+            maxLength={6}
+            onChange={(event) =>
+              onChange({ document_number: event.target.value.slice(0, 6) })
+            }
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-2">
+        <div className="form-group">
+          <label className="form-label">
+            Уникальный идентификатор (1-60 символов)
+          </label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Опционально"
+            value={recipient.identifier || ""}
+            maxLength={60}
+            onChange={(event) =>
+              onChange({ identifier: event.target.value.slice(0, 60) })
+            }
+          />
+        </div>
+      </div>
+
       <div className="form-group">
-        <label className="form-label">Назначение платежа (до 210 символов)</label>
+        <label className="form-label">
+          Назначение платежа (до 210 символов)
+        </label>
         <textarea
           className="form-input form-textarea"
           maxLength={210}
           rows={2}
-          value={recipient.purpose || ''}
-          onChange={(event) => onChange({ purpose: event.target.value.slice(0, 210) })}
+          value={recipient.purpose || ""}
+          onChange={(event) =>
+            onChange({ purpose: event.target.value.slice(0, 210) })
+          }
         />
       </div>
     </div>
@@ -835,23 +947,66 @@ export function DealForm({ initialData, onSubmit, submitLabel }: DealFormProps) 
           break;
         }
         case 'payment_contract_to_card': {
+          const fio = recipient.recipient_fio || {};
+
+          // Проверка обязательных полей ФИО
+          if (!fio.first_name)
+            return `Введите имя для получателя #${recipient.number}`;
+          if (!fio.last_name)
+            return `Введите фамилию для получателя #${recipient.number}`;
+
+          // Проверка номера карты
           const existingEncrypted = recipient.card_number_crypto_base64;
           if (recipient._card_number_plain) {
-            if (recipient._card_number_plain.length !== 16) {
-              return `Введите номер карты (16 цифр) для получателя #${recipient.number}`;
+            const cardLength = recipient._card_number_plain.length;
+            if (cardLength < 13 || cardLength > 19) {
+              return `Номер карты должен содержать от 13 до 19 цифр (получатель #${recipient.number})`;
             }
           } else if (!existingEncrypted) {
-            return `Введите номер карты (16 цифр) для получателя #${recipient.number}`;
+            return `Введите номер карты для получателя #${recipient.number}`;
           }
-          if (recipient.purpose && recipient.purpose.length > 210) {
-            return `Назначение платежа до 210 символов (получатель #${recipient.number})`;
-          }
+
+          // Проверка ИНН
           if (recipient.inn && !/^\d{12}$/.test(recipient.inn)) {
             return `ИНН должен содержать 12 цифр (получатель #${recipient.number})`;
           }
+
+          // Проверка назначения платежа
+          if (recipient.purpose && recipient.purpose.length > 210) {
+            return `Назначение платежа до 210 символов (получатель #${recipient.number})`;
+          }
           if (recipient.purpose) {
-            const purposeError = ensureAllowedText(recipient.purpose, 'Назначение платежа');
-            if (purposeError) return `${purposeError} (получатель #${recipient.number})`;
+            const purposeError = ensureAllowedText(
+              recipient.purpose,
+              "Назначение платежа",
+            );
+            if (purposeError)
+              return `${purposeError} (получатель #${recipient.number})`;
+          }
+
+          // Проверка ФИО
+          const firstNameError = ensureAllowedText(fio.first_name, "Имя");
+          if (firstNameError)
+            return `${firstNameError} (получатель #${recipient.number})`;
+          const lastNameError = ensureAllowedText(fio.last_name, "Фамилия");
+          if (lastNameError)
+            return `${lastNameError} (получатель #${recipient.number})`;
+          if (fio.middle_name) {
+            const middleNameError = ensureAllowedText(
+              fio.middle_name,
+              "Отчество",
+            );
+            if (middleNameError)
+              return `${middleNameError} (получатель #${recipient.number})`;
+          }
+
+          // Проверка идентификатора
+          if (recipient.identifier) {
+            const identifierRegex =
+              /^[0-9A-Za-zА-Яа-яЁё\t\n\r\-\./:;=@\[\\]^_{}|~№]{1,60}$/;
+            if (!identifierRegex.test(recipient.identifier)) {
+              return `Идентификатор содержит недопустимые символы (получатель #${recipient.number})`;
+            }
           }
           break;
         }
@@ -894,10 +1049,19 @@ export function DealForm({ initialData, onSubmit, submitLabel }: DealFormProps) 
           const existingEncrypted = recipient.card_number_crypto_base64;
           const encrypted = _card_number_plain
             ? await encryptCardNumber(_card_number_plain)
-            : existingEncrypted || '';
+            : existingEncrypted || "";
+
+          // Убеждаемся, что recipient_fio существует
+          const recipientFio = recipient.recipient_fio || {
+            first_name: "",
+            last_name: "",
+            middle_name: undefined,
+          };
+
           preparedRecipients.push({
             ...rest,
             card_number_crypto_base64: encrypted,
+            recipient_fio: recipientFio,
           });
         } else {
           const { _card_number_plain: ignoredCardNumber, ...rest } = recipient;

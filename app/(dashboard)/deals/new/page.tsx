@@ -36,6 +36,14 @@ interface Recipient {
   card_number?: string;
 }
 
+const formatCardNumber = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 19);
+  const parts = digits.match(/.{1,4}/g) || [];
+  return parts.join(' ');
+};
+
+const normalizeCardNumber = (value: string) => value.replace(/\D/g, '').slice(0, 19);
+
 export default function NewDealPage() {
   const router = useRouter();
   const layer = useAppStore((s) => s.layer);
@@ -125,59 +133,100 @@ export default function NewDealPage() {
     return recipients.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
   };
 
+  const encryptCardNumber = async (cardNumber: string): Promise<string> => {
+    const response = await fetch('/api/encrypt-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ card_number: cardNumber, layer }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Ошибка шифрования номера карты');
+    }
+    return data.card_number_crypto_base64;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
 
     try {
-      // Формируем данные сделки
+      // Валидация номеров карт
+      for (const r of recipients) {
+        if (r.type === 'payment_contract_to_card') {
+          const cardLength = (r.card_number || '').length;
+          if (cardLength < 13 || cardLength > 19) {
+            setError(`Номер карты должен содержать от 13 до 19 цифр (получатель #${recipients.indexOf(r) + 1})`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (!r.first_name || !r.last_name) {
+            setError(`Укажите имя и фамилию получателя на карте (получатель #${recipients.indexOf(r) + 1})`);
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      const preparedRecipients = [];
+
+      for (const r of recipients) {
+        const index = recipients.indexOf(r);
+        const base = {
+          number: index + 1,
+          type: r.type,
+          amount: parseFloat(r.amount),
+        };
+
+        switch (r.type) {
+          case 'payment_contract':
+            preparedRecipients.push({
+              ...base,
+              account: r.account,
+              bank_code: r.bank_code,
+              name: r.name,
+              inn: r.inn,
+              kpp: r.kpp || undefined,
+              purpose: r.purpose || 'Оплата по договору. НДС не облагается.',
+            });
+            break;
+          case 'payment_contract_by_sbp':
+            preparedRecipients.push({
+              ...base,
+              phone_number: r.phone_number,
+              bank_sbp_id: r.bank_sbp_id,
+              first_name: r.first_name,
+              middle_name: r.middle_name || undefined,
+              last_name: r.last_name,
+            });
+            break;
+          case 'payment_contract_to_card':
+            const encryptedCard = await encryptCardNumber(r.card_number || '');
+            preparedRecipients.push({
+              ...base,
+              card_number_crypto_base64: encryptedCard,
+              recipient_fio: {
+                first_name: r.first_name,
+                middle_name: r.middle_name || undefined,
+                last_name: r.last_name,
+              },
+            });
+            break;
+          case 'commission':
+            preparedRecipients.push(base);
+            break;
+          default:
+            preparedRecipients.push(base);
+        }
+      }
+
       const dealData = {
         payers: [{
           virtual_account: selectedAccount,
           amount: parseFloat(payerAmount),
         }],
-        recipients: recipients.map((r, index) => {
-          const base = {
-            number: index + 1,
-            type: r.type,
-            amount: parseFloat(r.amount),
-          };
-
-          switch (r.type) {
-            case 'payment_contract':
-              return {
-                ...base,
-                account: r.account,
-                bank_code: r.bank_code,
-                name: r.name,
-                inn: r.inn,
-                kpp: r.kpp || undefined,
-                purpose: r.purpose || 'Оплата по договору. НДС не облагается.',
-              };
-            case 'payment_contract_by_sbp':
-              return {
-                ...base,
-                phone_number: r.phone_number,
-                bank_sbp_id: r.bank_sbp_id,
-                first_name: r.first_name,
-                middle_name: r.middle_name || undefined,
-                last_name: r.last_name,
-              };
-            case 'payment_contract_to_card':
-              return {
-                ...base,
-                card_number_encrypted: r.card_number, // В реальности нужно шифровать
-                first_name: r.first_name,
-                middle_name: r.middle_name || undefined,
-                last_name: r.last_name,
-              };
-            case 'commission':
-              return base;
-            default:
-              return base;
-          }
-        }),
+        recipients: preparedRecipients,
       };
 
       const response = await createDeal(dealData);
@@ -496,13 +545,13 @@ export default function NewDealPage() {
                         <input
                           type="text"
                           className="form-input"
-                          placeholder="4000 0000 0000 0000"
-                          maxLength={19}
-                          value={recipient.card_number || ''}
-                          onChange={(e) => updateRecipient(recipient.id, { card_number: e.target.value })}
+                          placeholder="0000 0000 0000 0000"
+                          maxLength={23}
+                          value={formatCardNumber(recipient.card_number || '')}
+                          onChange={(e) => updateRecipient(recipient.id, { card_number: normalizeCardNumber(e.target.value) })}
                           required
                         />
-                        <p className="form-hint">Номер будет зашифрован перед отправкой</p>
+                        <p className="form-hint">Номер карты (13-19 цифр) будет зашифрован перед отправкой</p>
                       </div>
                       <div className="form-row form-row-3">
                         <div className="form-group">

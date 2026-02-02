@@ -7,6 +7,7 @@ interface LayerStatus {
   configured: boolean;
   signSystem: string | null;
   signThumbprint: string | null;
+  cardKeyConfigured?: boolean;
 }
 
 type ConfigLayer = 'pre' | 'prod';
@@ -33,7 +34,17 @@ export default function SettingsPage() {
   const [generatedKeys, setGeneratedKeys] = useState<{ privateKey: string; publicKey: string; thumbprint: string } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Состояние для публичных ключей шифрования карт
+  const [showCardKeyModal, setShowCardKeyModal] = useState(false);
+  const [cardKeyLayer, setCardKeyLayer] = useState<ConfigLayer>('pre');
+  const [cardPublicKeyText, setCardPublicKeyText] = useState('');
+  const [cardKeyInputMethod, setCardKeyInputMethod] = useState<'text' | 'file'>('text');
+  const [isSavingCardKey, setIsSavingCardKey] = useState(false);
+  const [cardKeySaveError, setCardKeySaveError] = useState<string | null>(null);
+  const [cardKeySaveSuccess, setCardKeySaveSuccess] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cardKeyFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadStatus = async () => {
     try {
@@ -142,6 +153,84 @@ export default function SettingsPage() {
   };
   const copyToClipboard = (text: string) => navigator.clipboard.writeText(text);
 
+  const openCardKeyModal = (layer: ConfigLayer) => {
+    setCardKeyLayer(layer);
+    setCardPublicKeyText('');
+    setCardKeySaveError(null);
+    setCardKeySaveSuccess(null);
+    setCardKeyInputMethod('text');
+    if (cardKeyFileInputRef.current) cardKeyFileInputRef.current.value = '';
+    setShowCardKeyModal(true);
+  };
+
+  const handleCardKeyFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setCardPublicKeyText(await file.text());
+    } catch {
+      setCardKeySaveError('Ошибка чтения файла');
+    }
+  };
+
+  const handleSaveCardKey = async () => {
+    if (!cardPublicKeyText.trim()) {
+      setCardKeySaveError('Введите публичный ключ');
+      return;
+    }
+
+    setIsSavingCardKey(true);
+    setCardKeySaveError(null);
+    setCardKeySaveSuccess(null);
+
+    try {
+      const response = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save-card-key',
+          layer: cardKeyLayer,
+          data: { publicKey: cardPublicKeyText },
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || 'Ошибка сохранения');
+      }
+
+      setCardKeySaveSuccess(result.message);
+      await loadStatus();
+
+      setTimeout(() => {
+        setShowCardKeyModal(false);
+      }, 2000);
+    } catch (error) {
+      setCardKeySaveError(error instanceof Error ? error.message : 'Ошибка сохранения');
+    } finally {
+      setIsSavingCardKey(false);
+    }
+  };
+
+  const handleDeleteCardKey = async (layer: ConfigLayer) => {
+    if (!confirm(`Удалить публичный ключ шифрования для слоя ${layer.toUpperCase()}?`)) return;
+
+    try {
+      const response = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete-card-key', layer }),
+      });
+
+      if (response.ok) {
+        await loadStatus();
+      }
+    } catch (error) {
+      console.error('Failed to delete card key:', error);
+    }
+  };
+
   const renderLayerCard = (layer: ConfigLayer, label: string) => {
     const status = keysStatus?.[layer];
     const isThisLayerTesting = isTesting && testResult?.layer === layer;
@@ -215,6 +304,66 @@ export default function SettingsPage() {
         <div className="grid grid-2">
           {renderLayerCard('pre', 'Тестовый слой')}
           {renderLayerCard('prod', 'Боевой слой')}
+        </div>
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Ключи шифрования карт</h2>
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
+          Публичные RSA ключи Cyclops для шифрования номеров карт при создании сделок с типом получателя <code style={{ padding: '2px 6px', background: 'var(--bg-secondary)', borderRadius: 4, fontSize: 13 }}>payment_contract_to_card</code>.
+        </p>
+        <div className="grid grid-2">
+          {(['pre', 'prod'] as const).map((layer) => {
+            const status = keysStatus?.[layer];
+            const isConfigured = status?.cardKeyConfigured || false;
+            return (
+              <div key={layer} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span className={`badge ${layer === 'pre' ? 'badge-warning' : 'badge-success'}`}>
+                    {layer.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+                    {layer === 'pre' ? 'Тестовый слой' : 'Боевой слой'}
+                  </span>
+                </div>
+                <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                  {isLoading ? (
+                    <span className="loading"><span className="spinner" /> Загрузка...</span>
+                  ) : isConfigured ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-success)', fontSize: 13 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      Публичный ключ настроен
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-tertiary)', fontSize: 13 }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                      Ключ не настроен
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => openCardKeyModal(layer)}>
+                    {isConfigured ? 'Изменить ключ' : 'Загрузить ключ'}
+                  </button>
+                  {isConfigured && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--color-error)' }}
+                      onClick={() => handleDeleteCardKey(layer)}
+                    >
+                      Удалить
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -320,6 +469,147 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {showCardKeyModal && (
+        <div className="modal-overlay" onClick={() => setShowCardKeyModal(false)}>
+          <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                Публичный ключ шифрования — {cardKeyLayer.toUpperCase()}
+              </h3>
+              <button className="modal-close" onClick={() => setShowCardKeyModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ padding: '12px 16px', background: 'var(--color-info-bg)', borderRadius: 8, marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>
+                <strong>Где взять ключ:</strong> Публичные ключи находятся в документации Cyclops в разделе &quot;Шифрование номера карты&quot;.
+                Скопируйте содержимое PEM файла для слоя {cardKeyLayer.toUpperCase()}.
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Способ ввода ключа</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(['text', 'file'] as const).map((method) => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setCardKeyInputMethod(method)}
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        padding: 12,
+                        background: cardKeyInputMethod === method ? 'var(--accent-bg)' : 'var(--bg-secondary)',
+                        border: `2px solid ${cardKeyInputMethod === method ? 'var(--accent-color)' : 'transparent'}`,
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: cardKeyInputMethod === method ? 'var(--accent-color)' : 'var(--text-secondary)',
+                      }}
+                    >
+                      {method === 'text' ? 'Вставить текст' : 'Загрузить файл'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Публичный ключ (PEM) *</label>
+                {cardKeyInputMethod === 'file' ? (
+                  <div
+                    style={{
+                      position: 'relative',
+                      padding: 32,
+                      border: '2px dashed var(--border-color)',
+                      borderRadius: 10,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      ref={cardKeyFileInputRef}
+                      type="file"
+                      accept=".pem,.pub,.txt"
+                      onChange={handleCardKeyFileUpload}
+                      style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
+                    />
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                      Выберите файл .pem (например, pre.pem или prod.pem)
+                    </div>
+                  </div>
+                ) : (
+                  <textarea
+                    className="form-input form-textarea"
+                    placeholder="-----BEGIN PUBLIC KEY-----&#10;MIICIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIICCgKCAgEA...&#10;-----END PUBLIC KEY-----"
+                    value={cardPublicKeyText}
+                    onChange={(e) => setCardPublicKeyText(e.target.value)}
+                    rows={10}
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}
+                  />
+                )}
+                <p className="form-hint">
+                  Скопируйте весь ключ включая строки BEGIN и END
+                </p>
+              </div>
+
+              {cardKeySaveError && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '14px 16px',
+                    background: 'var(--color-error-bg)',
+                    color: 'var(--color-error)',
+                    borderRadius: 10,
+                    fontSize: 14,
+                  }}
+                >
+                  ✗ {cardKeySaveError}
+                </div>
+              )}
+
+              {cardKeySaveSuccess && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '14px 16px',
+                    background: 'var(--color-success-bg)',
+                    color: 'var(--color-success)',
+                    borderRadius: 10,
+                    fontSize: 14,
+                  }}
+                >
+                  ✓ {cardKeySaveSuccess}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowCardKeyModal(false)}>
+                Отмена
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveCardKey}
+                disabled={isSavingCardKey || !cardPublicKeyText.trim()}
+              >
+                {isSavingCardKey ? (
+                  <>
+                    <span className="spinner" /> Сохранение...
+                  </>
+                ) : (
+                  'Сохранить'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         @media (max-width: 767px) {
           :global(.grid-2) {

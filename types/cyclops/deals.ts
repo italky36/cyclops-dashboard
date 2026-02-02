@@ -147,9 +147,10 @@ export interface SbpRecipient extends RecipientBase {
  * Получатель на карту
  */
 export interface CardRecipient extends RecipientBase {
-  type: 'payment_contract_to_card';
-  card_number_crypto_base64: string;  // Зашифрованный RSA OAEP номер карты
-  purpose?: string;          // До 210 символов (50 для B2B)
+  type: "payment_contract_to_card";
+  card_number_crypto_base64: string; // Зашифрованный RSA OAEP номер карты
+  recipient_fio: RecipientFio; // ФИО физлица-получателя
+  purpose?: string; // До 210 символов (50 для B2B)
   document_number?: string;
   identifier?: string;
   inn?: string;

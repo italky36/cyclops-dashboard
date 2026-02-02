@@ -5,6 +5,7 @@ import path from 'path';
 
 // Директория для хранения зашифрованных ключей
 const KEYS_DIR = process.env.KEYS_STORAGE_PATH || './.keys';
+const CARD_KEYS_DIR = path.join(KEYS_DIR, 'card-encryption');
 
 // Алгоритм шифрования
 const ALGORITHM = 'aes-256-gcm';
@@ -145,6 +146,44 @@ function getKeysFilePath(layer: string): string {
 }
 
 /**
+ * Получение пути к файлу публичного ключа для шифрования карт
+ */
+function getCardPublicKeyFilePath(layer: string): string {
+  return path.join(CARD_KEYS_DIR, `${layer}.public.pem`);
+}
+
+/**
+ * Сохранение публичного ключа для шифрования карт
+ */
+async function saveCardPublicKey(layer: string, publicKey: string): Promise<void> {
+  await fs.mkdir(CARD_KEYS_DIR, { recursive: true });
+  await fs.writeFile(getCardPublicKeyFilePath(layer), publicKey, 'utf8');
+}
+
+/**
+ * Загрузка публичного ключа для шифрования карт
+ */
+async function loadCardPublicKey(layer: string): Promise<string | null> {
+  try {
+    return await fs.readFile(getCardPublicKeyFilePath(layer), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Проверка наличия публичного ключа для шифрования карт
+ */
+async function hasCardPublicKey(layer: string): Promise<boolean> {
+  try {
+    await fs.access(getCardPublicKeyFilePath(layer));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Сохранение конфигурации ключей
  */
 async function saveKeysConfig(layer: string, config: {
@@ -202,9 +241,11 @@ export async function GET(request: NextRequest) {
   try {
     if (action === 'status') {
       // Проверяем статус для обоих слоёв
-      const [preConfigured, prodConfigured] = await Promise.all([
+      const [preConfigured, prodConfigured, preCardKey, prodCardKey] = await Promise.all([
         hasKeysConfig('pre'),
         hasKeysConfig('prod'),
+        hasCardPublicKey('pre'),
+        hasCardPublicKey('prod'),
       ]);
 
       // Пытаемся загрузить конфигурацию для получения thumbprint
@@ -217,17 +258,32 @@ export async function GET(request: NextRequest) {
         pre: {
           configured: preConfigured,
           signSystem: preConfig?.signSystem || null,
-          signThumbprint: preConfig?.signThumbprint 
-            ? preConfig.signThumbprint.slice(0, 8) + '...' 
+          signThumbprint: preConfig?.signThumbprint
+            ? preConfig.signThumbprint.slice(0, 8) + '...'
             : null,
+          cardKeyConfigured: preCardKey,
         },
         prod: {
           configured: prodConfigured,
           signSystem: prodConfig?.signSystem || null,
-          signThumbprint: prodConfig?.signThumbprint 
-            ? prodConfig.signThumbprint.slice(0, 8) + '...' 
+          signThumbprint: prodConfig?.signThumbprint
+            ? prodConfig.signThumbprint.slice(0, 8) + '...'
             : null,
+          cardKeyConfigured: prodCardKey,
         },
+      });
+    }
+
+    if (action === 'get-card-key' && layer) {
+      // Получение публичного ключа для шифрования карт
+      const publicKey = await loadCardPublicKey(layer);
+      if (!publicKey) {
+        return NextResponse.json({ configured: false });
+      }
+      return NextResponse.json({
+        configured: true,
+        publicKey,
+        preview: publicKey.substring(0, 64) + '...',
       });
     }
 
@@ -297,6 +353,7 @@ export async function POST(request: NextRequest) {
         signSystem?: string;
         signThumbprint?: string;
         certificate?: string;
+        publicKey?: string;
       };
     };
 
@@ -422,6 +479,60 @@ export async function POST(request: NextRequest) {
           success: false,
           layer,
           error: error instanceof Error ? error.message : 'Ошибка подключения',
+        });
+      }
+    }
+
+    if (action === 'save-card-key') {
+      if (!layer || !['pre', 'prod'].includes(layer)) {
+        return NextResponse.json(
+          { error: 'Неверный слой. Укажите "pre" или "prod"' },
+          { status: 400 }
+        );
+      }
+
+      if (!data?.publicKey) {
+        return NextResponse.json(
+          { error: 'Публичный ключ обязателен' },
+          { status: 400 }
+        );
+      }
+
+      // Валидация что это публичный ключ (должен начинаться с BEGIN PUBLIC KEY)
+      if (!data.publicKey.includes('-----BEGIN PUBLIC KEY-----')) {
+        return NextResponse.json(
+          { error: 'Неверный формат ключа. Ожидается PUBLIC KEY в формате PEM.' },
+          { status: 400 }
+        );
+      }
+
+      // Сохраняем публичный ключ
+      await saveCardPublicKey(layer, data.publicKey);
+
+      return NextResponse.json({
+        success: true,
+        message: `Публичный ключ для шифрования карт (${layer.toUpperCase()}) сохранен`,
+      });
+    }
+
+    if (action === 'delete-card-key') {
+      if (!layer || !['pre', 'prod'].includes(layer)) {
+        return NextResponse.json(
+          { error: 'Неверный слой' },
+          { status: 400 }
+        );
+      }
+
+      try {
+        await fs.unlink(getCardPublicKeyFilePath(layer));
+        return NextResponse.json({
+          success: true,
+          message: `Публичный ключ для шифрования карт (${layer.toUpperCase()}) удален`,
+        });
+      } catch {
+        return NextResponse.json({
+          success: false,
+          error: 'Ключ не найден',
         });
       }
     }
