@@ -238,23 +238,28 @@ export default function DealsPage() {
           <p className="page-description">Управление выплатами с номинального счёта</p>
         </div>
         <div className="page-actions">
-          <button
-            onClick={refreshDeals}
-            className="btn btn-ghost btn-sm btn-icon"
-            title="Обновить"
-            aria-label="Обновить"
-          >
-            ↻
-          </button>
-          <label className="auto-refresh" title="Автообновление">
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(event) => setAutoRefresh(event.target.checked)}
-            />
-            <span>Авто</span>
-          </label>
-          <Link href="/deals/create" className="btn btn-primary">
+          <div className="refresh-controls">
+            <button
+              onClick={refreshDeals}
+              className="btn btn-ghost btn-sm btn-icon refresh-btn"
+              title="Обновить"
+              aria-label="Обновить"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <path d="M21 3v6h-6" />
+              </svg>
+            </button>
+            <label className="auto-refresh" title="Автообновление">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(event) => setAutoRefresh(event.target.checked)}
+              />
+              <span>Авто</span>
+            </label>
+          </div>
+          <Link href="/deals/create" className="btn btn-primary create-deal-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
@@ -402,14 +407,34 @@ export default function DealsPage() {
           gap: 10px;
         }
 
+        .refresh-controls {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+        }
+
         .btn-icon {
-          width: 32px;
-          height: 32px;
+          width: 36px;
+          height: 36px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           font-size: 16px;
           line-height: 1;
+        }
+
+        .refresh-btn svg {
+          display: block;
+          width: 24px;
+          height: 24px;
+          stroke-width: 2.6px;
+        }
+
+        .refresh-btn {
+          width: 40px;
+          height: 40px;
+          min-height: 40px;
+          padding: 0;
         }
 
         .auto-refresh {
@@ -543,11 +568,18 @@ export default function DealsPage() {
           }
 
           .page-actions {
-            flex-wrap: wrap;
+            width: 100%;
+            justify-content: space-between;
           }
 
-          .page-actions > a {
-            width: 100%;
+          .create-deal-btn {
+            order: 1;
+          }
+
+          .refresh-controls {
+            order: 2;
+            margin-left: auto;
+            padding-right: 6px;
           }
 
           .pagination {

@@ -109,73 +109,10 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
     return null;
   };
 
-  if (isLoading) {
-    return (
-      <div className="chart-container loading">
-        <div className="chart-skeleton">
-          <div className="skeleton-bar" />
-          <div className="skeleton-bar" />
-          <div className="skeleton-bar" />
-        </div>
-        <style jsx>{`
-          .chart-container.loading {
-            height: 200px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-
-          .chart-skeleton {
-            display: flex;
-            gap: 12px;
-            align-items: flex-end;
-            width: 100%;
-            max-width: 300px;
-            height: 200px;
-          }
-
-          .skeleton-bar {
-            flex: 1;
-            background: linear-gradient(
-              90deg,
-              var(--bg-tertiary) 0%,
-              var(--bg-secondary) 50%,
-              var(--bg-tertiary) 100%
-            );
-            background-size: 200% 100%;
-            animation: skeleton-loading 1.5s ease-in-out infinite;
-            border-radius: 4px;
-          }
-
-          .skeleton-bar:nth-child(1) {
-            height: 60%;
-          }
-
-          .skeleton-bar:nth-child(2) {
-            height: 100%;
-          }
-
-          .skeleton-bar:nth-child(3) {
-            height: 80%;
-          }
-
-          @keyframes skeleton-loading {
-            0% {
-              background-position: 200% 0;
-            }
-            100% {
-              background-position: -200% 0;
-            }
-          }
-        `}</style>
-      </div>
-    );
-  }
-
   // Проверяем, есть ли хоть какие-то данные
   const hasData = data.some(d => d.payments > 0 || d.deals > 0);
 
-  if (error) {
+  if (error && data.length === 0) {
     return (
       <div className="chart-container error">
         <div className="error-content">
@@ -217,7 +154,7 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
   }
 
   // Если данных нет, показываем empty state
-  if (!hasData && data.length > 0) {
+  if (!hasData && data.length > 0 && !isLoading) {
     return (
       <div className="chart-container empty">
         <div className="empty-content">
@@ -267,7 +204,7 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
     );
   }
 
-  const chartKey = `${days}-${data.length}`;
+  const showSkeleton = isLoading && data.length === 0;
 
   const values = data.flatMap((item) => [item.payments, item.deals]).filter((value) => value > 0);
   const maxValue = values.length ? Math.max(...values) : 0;
@@ -276,9 +213,18 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
 
   return (
     <div className="chart-container">
+      {isLoading && data.length > 0 && (
+        <div className="chart-overlay">
+          <div className="chart-spinner" aria-label="Загрузка" />
+        </div>
+      )}
+      {error && data.length > 0 && (
+        <div className="chart-overlay error">
+          <span>{error}</span>
+        </div>
+      )}
       <ResponsiveContainer width="100%" height={200}>
         <AreaChart
-          key={chartKey}
           data={data}
           margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
         >
@@ -356,6 +302,87 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
         .chart-container {
           width: 100%;
           padding: 6px 0 2px;
+          position: relative;
+        }
+
+        .chart-overlay {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255, 255, 255, 0.55);
+          backdrop-filter: blur(2px);
+          z-index: 2;
+          font-size: 12px;
+          color: var(--text-secondary);
+          pointer-events: none;
+        }
+
+        .chart-overlay.error {
+          background: rgba(254, 242, 242, 0.6);
+          color: var(--color-error);
+          font-weight: 500;
+        }
+
+        .chart-skeleton {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          gap: 12px;
+          align-items: flex-end;
+          padding: 16px 24px 24px;
+          z-index: 1;
+          pointer-events: none;
+        }
+
+        .skeleton-bar {
+          flex: 1;
+          background: linear-gradient(
+            90deg,
+            var(--bg-tertiary) 0%,
+            var(--bg-secondary) 50%,
+            var(--bg-tertiary) 100%
+          );
+          background-size: 200% 100%;
+          animation: skeleton-loading 1.5s ease-in-out infinite;
+          border-radius: 4px;
+        }
+
+        .skeleton-bar:nth-child(1) {
+          height: 60%;
+        }
+
+        .skeleton-bar:nth-child(2) {
+          height: 100%;
+        }
+
+        .skeleton-bar:nth-child(3) {
+          height: 80%;
+        }
+
+        @keyframes skeleton-loading {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
+        }
+
+        .chart-spinner {
+          width: 22px;
+          height: 22px;
+          border: 2px solid var(--border-color);
+          border-top-color: var(--accent-color);
+          border-radius: 999px;
+          animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
         }
 
         :global(.custom-tooltip) {
@@ -399,6 +426,13 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
           }
         }
       `}</style>
+      {showSkeleton && (
+        <div className="chart-skeleton">
+          <div className="skeleton-bar" />
+          <div className="skeleton-bar" />
+          <div className="skeleton-bar" />
+        </div>
+      )}
     </div>
   );
 }

@@ -75,33 +75,38 @@ export function DealHeader({
               >
                 {DEAL_STATUS_LABELS[deal.status]}
               </button>
-              {(onRefresh || onAutoRefreshChange) && (
-                <div className="refresh-group">
-                  {onRefresh && (
-                    <button
-                      onClick={onRefresh}
-                      className="btn btn-ghost btn-sm btn-icon"
-                      title="Обновить"
-                      disabled={loading}
-                      aria-label="Обновить"
-                    >
-                      ↻
-                    </button>
-                  )}
-                  {onAutoRefreshChange && (
-                    <label className="auto-refresh" title="Автообновление">
-                      <input
-                        type="checkbox"
-                        checked={autoRefresh}
-                        onChange={(event) => onAutoRefreshChange(event.target.checked)}
-                      />
-                      <span>Авто</span>
-                    </label>
-                  )}
+              <div className="deal-amount-row">
+                <div className="deal-amount-compact">
+                  {formatAmount(deal.amount)}
                 </div>
-              )}
-              <div className="deal-amount-compact">
-                {formatAmount(deal.amount)}
+                {(onRefresh || onAutoRefreshChange) && (
+                  <div className="refresh-group">
+                    {onRefresh && (
+                      <button
+                        onClick={onRefresh}
+                        className="btn btn-ghost btn-sm btn-icon refresh-btn"
+                        title="Обновить"
+                        disabled={loading}
+                        aria-label="Обновить"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
+                      </button>
+                    )}
+                    {onAutoRefreshChange && (
+                      <label className="auto-refresh" title="Автообновление">
+                        <input
+                          type="checkbox"
+                          checked={autoRefresh}
+                          onChange={(event) => onAutoRefreshChange(event.target.checked)}
+                        />
+                        <span>Авто</span>
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -244,6 +249,13 @@ export function DealHeader({
           margin-left: auto;
         }
 
+        .deal-amount-row {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          margin-left: auto;
+        }
+
         .deal-header-actions {
           display: flex;
           align-items: center;
@@ -262,13 +274,27 @@ export function DealHeader({
         }
 
         .btn-icon {
-          width: 32px;
-          height: 32px;
+          width: 36px;
+          height: 36px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           font-size: 16px;
           line-height: 1;
+        }
+
+        .refresh-btn svg {
+          display: block;
+          width: 24px;
+          height: 24px;
+          stroke-width: 2.6px;
+        }
+
+        .refresh-btn {
+          width: 40px;
+          height: 40px;
+          min-height: 40px;
+          padding: 0;
         }
 
         .auto-refresh {
@@ -296,6 +322,10 @@ export function DealHeader({
           }
 
           .deal-amount-compact {
+            margin-left: 0;
+          }
+
+          .deal-amount-row {
             margin-left: 0;
           }
 
@@ -346,9 +376,10 @@ export function DealHeader({
             display: block;
           }
 
-          .deal-amount-compact {
+          .deal-amount-row {
             order: 2;
             width: 100%;
+            justify-content: space-between;
             margin-left: 0;
           }
 
@@ -370,9 +401,6 @@ export function DealHeader({
           }
 
           .refresh-group {
-            justify-content: flex-start;
-            order: 4;
-            width: auto;
             gap: 6px;
           }
 
