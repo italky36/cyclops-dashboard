@@ -227,6 +227,23 @@ function ensureSchema(database: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_payments_cache_layer_last_seen
       ON payments_cache (layer, last_seen_at DESC);
+
+    -- ============ ANALYTICS DAILY ============
+
+    CREATE TABLE IF NOT EXISTS analytics_daily (
+      layer TEXT NOT NULL,
+      date TEXT NOT NULL,
+      payments_sum REAL NOT NULL DEFAULT 0,
+      deals_sum REAL NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (layer, date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_analytics_daily_layer_date
+      ON analytics_daily (layer, date DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_analytics_daily_updated
+      ON analytics_daily (updated_at DESC);
   `);
 }
 

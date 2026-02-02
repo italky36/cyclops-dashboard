@@ -27,6 +27,20 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
   const [data, setData] = useState<DataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(max-width: 767px)');
+    const update = () => setIsMobile(media.matches);
+    update();
+    if (media.addEventListener) {
+      media.addEventListener('change', update);
+      return () => media.removeEventListener('change', update);
+    }
+    media.addListener(update);
+    return () => media.removeListener(update);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -91,12 +105,12 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
   const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
     if (active && payload && payload.length) {
       return (
-        <div className="custom-tooltip">
+        <div className={`custom-tooltip${isMobile ? ' mobile' : ''}`}>
           <p className="tooltip-label">{formatDate(label || '')}</p>
           {payload.map((entry, index) => (
             <p
               key={`item-${index}`}
-              className="tooltip-item"
+              className={`tooltip-item${isMobile ? ' compact' : ''}`}
               style={{ color: entry.color }}
             >
               <span className="tooltip-name">{entry.name}:</span>{' '}
@@ -263,7 +277,14 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
             axisLine={false}
             padding={yAxisPadding}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip
+            content={<CustomTooltip />}
+            wrapperStyle={{
+              pointerEvents: 'none',
+              maxWidth: isMobile ? 220 : undefined,
+            }}
+            position={isMobile ? { x: 12, y: 8 } : undefined}
+          />
           <Legend
             wrapperStyle={{
               paddingTop: '6px',
@@ -331,13 +352,16 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
           display: flex;
           gap: 12px;
           align-items: flex-end;
+          justify-content: center;
           padding: 16px 24px 24px;
           z-index: 1;
           pointer-events: none;
         }
 
         .skeleton-bar {
-          flex: 1;
+          flex: 0 0 auto;
+          width: min(26%, 160px);
+          max-width: 180px;
           background: linear-gradient(
             90deg,
             var(--bg-tertiary) 0%,
@@ -393,11 +417,22 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
+        :global(.custom-tooltip.mobile) {
+          padding: 8px 10px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+          max-width: 220px;
+        }
+
         :global(.tooltip-label) {
           font-size: 13px;
           font-weight: 600;
           color: var(--text-primary);
           margin: 0 0 8px 0;
+        }
+
+        :global(.custom-tooltip.mobile .tooltip-label) {
+          font-size: 11px;
+          margin-bottom: 6px;
         }
 
         :global(.tooltip-item) {
@@ -406,6 +441,12 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
           display: flex;
           justify-content: space-between;
           gap: 16px;
+        }
+
+        :global(.tooltip-item.compact) {
+          font-size: 11px;
+          gap: 8px;
+          margin: 2px 0;
         }
 
         :global(.tooltip-name) {
