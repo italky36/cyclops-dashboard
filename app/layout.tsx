@@ -51,8 +51,65 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
+      <head>
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              #__loading {
+                position: fixed;
+                inset: 0;
+                z-index: 99999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #0a0a0f;
+                transition: opacity 0.2s ease-out;
+              }
+              #__loading.hidden {
+                opacity: 0;
+                pointer-events: none;
+              }
+              #__loading-spinner {
+                width: 32px;
+                height: 32px;
+                border: 2px solid rgba(255,255,255,0.1);
+                border-top-color: #3b82f6;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+              }
+              @keyframes spin {
+                to { transform: rotate(360deg); }
+              }
+              @media (prefers-color-scheme: light) {
+                #__loading { background: #ffffff; }
+                #__loading-spinner { border-color: rgba(0,0,0,0.1); border-top-color: #3b82f6; }
+              }
+            `,
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                var loader = document.getElementById('__loading');
+                if (loader) {
+                  window.addEventListener('load', function() {
+                    setTimeout(function() {
+                      loader.classList.add('hidden');
+                      setTimeout(function() { loader.remove(); }, 200);
+                    }, 50);
+                  });
+                }
+              })();
+            `,
+          }}
+        />
+      </head>
       <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
+        <div id="__loading">
+          <div id="__loading-spinner" />
+        </div>
         {children}
       </body>
     </html>
