@@ -56,12 +56,46 @@ interface PayoutSchedule {
   updated_at: string;
 }
 
+interface ClientItem {
+  id: number;
+  name: string;
+  inn: string | null;
+  payout_type: string;
+  machine_count: number;
+}
+
+interface ClientPayoutCalculation {
+  client_id: number;
+  client_name: string;
+  period_start: string;
+  period_end: string;
+  machines: Array<{
+    machine_id: number;
+    vendista_id: string;
+    machine_name: string | null;
+    sales_amount: number;
+    commission_percent: number;
+    commission_amount: number;
+    net_amount: number;
+  }>;
+  total_sales: number;
+  total_commission: number;
+  payout_amount: number;
+}
+
+const PAYOUT_TYPE_LABELS: Record<string, string> = {
+  payment_contract: 'Банк. перевод',
+  payment_contract_by_sbp_v2: 'СБП',
+  payment_contract_to_card: 'Карта',
+};
+
 export default function PayoutsPage() {
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
   const { listBeneficiaries } = useCyclops({ layer });
 
   const [activeTab, setActiveTab] = useState<'manual' | 'history' | 'schedule'>('manual');
+  const [payoutMode, setPayoutMode] = useState<'client' | 'beneficiary'>('client');
 
   // Manual payout state
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
@@ -71,6 +105,12 @@ export default function PayoutsPage() {
   const [calculation, setCalculation] = useState<PayoutCalculation | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+
+  // Client payout state
+  const [clients, setClients] = useState<ClientItem[]>([]);
+  const [selectedClient, setSelectedClient] = useState<string>('');
+  const [clientCalculation, setClientCalculation] = useState<ClientPayoutCalculation | null>(null);
+  const [clientPayoutResult, setClientPayoutResult] = useState<{ success: boolean; message: string; deal_id?: string } | null>(null);
 
   // History state
   const [payouts, setPayouts] = useState<Payout[]>([]);
@@ -141,6 +181,22 @@ export default function PayoutsPage() {
     }
   }, [listBeneficiaries]);
 
+  const loadClients = useCallback(async () => {
+    if (inFlight.current.has('clients')) return;
+    inFlight.current.add('clients');
+    try {
+      const response = await fetchWithTimeout('/api/clients?is_active=true');
+      const data = await response.json();
+      if (data.clients && isMounted.current) {
+        setClients(data.clients.filter((c: ClientItem) => c.machine_count > 0));
+      }
+    } catch (error) {
+      console.error('Failed to load clients:', error);
+    } finally {
+      inFlight.current.delete('clients');
+    }
+  }, []);
+
   const loadBeneficiaryIds = useCallback(async () => {
     if (inFlight.current.has('beneficiary_ids')) return;
     inFlight.current.add('beneficiary_ids');
@@ -203,6 +259,7 @@ export default function PayoutsPage() {
     if (activeTab === 'manual') {
       if (!loadedTabs.current.manual) {
         loadedTabs.current.manual = true;
+        loadClients();
         loadBeneficiaries();
         loadBeneficiaryIds();
       }
@@ -224,7 +281,7 @@ export default function PayoutsPage() {
         loadSchedule();
       }
     }
-  }, [activeTab, loadBeneficiaries, loadBeneficiaryIds, loadPayoutHistory, loadSchedule]);
+  }, [activeTab, loadClients, loadBeneficiaries, loadBeneficiaryIds, loadPayoutHistory, loadSchedule]);
 
   useEffect(() => {
     if (activeTab === 'history') {
@@ -257,6 +314,65 @@ export default function PayoutsPage() {
       console.error('Failed to calculate payout:', error);
     } finally {
       setIsCalculating(false);
+    }
+  };
+
+  const handleClientCalculate = async () => {
+    if (!selectedClient) return;
+    setIsCalculating(true);
+    setClientCalculation(null);
+    setClientPayoutResult(null);
+    try {
+      const response = await fetch(`/api/clients/${selectedClient}/payout?layer=${layer}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'calculate', end_date: endDate }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Ошибка расчёта');
+      setClientCalculation(data.calculation);
+    } catch (error) {
+      console.error('Failed to calculate client payout:', error);
+      alert(error instanceof Error ? error.message : 'Ошибка расчёта');
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+
+  const handleClientExecute = async () => {
+    if (!clientCalculation || clientCalculation.payout_amount <= 0) return;
+    if (!confirm(`Выполнить выплату ${formatMoney(clientCalculation.payout_amount)} клиенту "${clientCalculation.client_name}"?`)) return;
+    setIsExecuting(true);
+    setClientPayoutResult(null);
+    try {
+      const response = await fetch(`/api/clients/${selectedClient}/payout?layer=${layer}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'execute', end_date: endDate }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setClientPayoutResult({ success: false, message: data.error || 'Ошибка выплаты' });
+        return;
+      }
+      setClientPayoutResult({
+        success: true,
+        message: `Выплата выполнена! Deal ID: ${data.cyclops_deal_id}`,
+        deal_id: data.cyclops_deal_id,
+      });
+      addRecentAction({
+        type: 'Выплата',
+        description: `Выплата ${formatMoney(clientCalculation.payout_amount)} клиенту ${clientCalculation.client_name}`,
+        layer,
+      });
+      setClientCalculation(null);
+    } catch (error) {
+      setClientPayoutResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Ошибка',
+      });
+    } finally {
+      setIsExecuting(false);
     }
   };
 
@@ -403,9 +519,9 @@ export default function PayoutsPage() {
     <div className="payouts-page">
       <header className="page-header">
         <div>
-          <h1 className="page-title">Выплаты бенефициарам</h1>
+          <h1 className="page-title">Выплаты</h1>
           <p className="page-description">
-            Расчёт и выполнение выплат на основе данных Vendista
+            Расчёт и выполнение выплат клиентам на основе данных Vendista
           </p>
         </div>
       </header>
@@ -434,8 +550,185 @@ export default function PayoutsPage() {
       {/* Manual Payout Tab */}
       {activeTab === 'manual' && (
         <div className="manual-payout">
+          {/* Mode Switcher */}
+          <div className="mode-switcher">
+            <button
+              className={`mode-btn ${payoutMode === 'client' ? 'active' : ''}`}
+              onClick={() => { setPayoutMode('client'); setCalculation(null); setClientCalculation(null); }}
+            >
+              По клиентам
+            </button>
+            <button
+              className={`mode-btn ${payoutMode === 'beneficiary' ? 'active' : ''}`}
+              onClick={() => { setPayoutMode('beneficiary'); setCalculation(null); setClientCalculation(null); }}
+            >
+              По бенефициарам (старый)
+            </button>
+          </div>
+
+          {/* Client payout form */}
+          {payoutMode === 'client' && (
+            <div className="card">
+              <h2 className="card-title">Выплата клиенту</h2>
+
+              {clientPayoutResult && (
+                <div className={`result-banner ${clientPayoutResult.success ? 'success' : 'error'}`}>
+                  <p>{clientPayoutResult.message}</p>
+                  {clientPayoutResult.deal_id && (
+                    <a href={`/deals/${clientPayoutResult.deal_id}`} className="result-link">
+                      Открыть сделку в Cyclops
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Клиент</label>
+                  <select
+                    className="form-input form-select"
+                    value={selectedClient}
+                    onChange={(e) => {
+                      setSelectedClient(e.target.value);
+                      setClientCalculation(null);
+                      setClientPayoutResult(null);
+                    }}
+                  >
+                    <option value="">Выберите клиента</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.inn ? `(${c.inn})` : ''} — {c.machine_count} авт. [{PAYOUT_TYPE_LABELS[c.payout_type]}]
+                      </option>
+                    ))}
+                  </select>
+                  {clients.length === 0 && (
+                    <span className="form-hint">
+                      Нет клиентов с привязанными автоматами.{' '}
+                      <a href="/clients/create">Создать клиента</a>
+                    </span>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Дата окончания периода</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={endDate}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setClientCalculation(null);
+                    }}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              </div>
+
+              <button
+                className="btn btn-secondary"
+                onClick={handleClientCalculate}
+                disabled={!selectedClient || isCalculating}
+              >
+                {isCalculating ? (
+                  <>
+                    <div className="spinner" style={{ width: 16, height: 16 }} />
+                    Расчёт...
+                  </>
+                ) : (
+                  'Рассчитать'
+                )}
+              </button>
+
+              {clientCalculation && (
+                <div className="calculation-result" style={{ marginTop: 24 }}>
+                  <h3 className="section-title">Результат расчёта — {clientCalculation.client_name}</h3>
+
+                  <div className="calculation-summary">
+                    <div className="summary-item">
+                      <span className="summary-label">Период</span>
+                      <span className="summary-value">
+                        {formatDate(clientCalculation.period_start)} — {formatDate(clientCalculation.period_end)}
+                      </span>
+                    </div>
+                    <div className="summary-item">
+                      <span className="summary-label">Продажи</span>
+                      <span className="summary-value money">{formatMoney(clientCalculation.total_sales)}</span>
+                    </div>
+                    <div className="summary-item">
+                      <span className="summary-label">Комиссия</span>
+                      <span className="summary-value money money-negative">-{formatMoney(clientCalculation.total_commission)}</span>
+                    </div>
+                    <div className="summary-item highlight">
+                      <span className="summary-label">К выплате</span>
+                      <span className="summary-value money money-positive">{formatMoney(clientCalculation.payout_amount)}</span>
+                    </div>
+                  </div>
+
+                  {clientCalculation.machines.length > 0 && (
+                    <div className="machines-breakdown">
+                      <div className="table-wrapper">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Автомат</th>
+                              <th>Продажи</th>
+                              <th>Комиссия</th>
+                              <th>К выплате</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clientCalculation.machines.map((m) => (
+                              <tr key={m.machine_id}>
+                                <td>
+                                  <span className="code">{m.vendista_id}</span>
+                                  {m.machine_name && <span className="machine-name"> — {m.machine_name}</span>}
+                                </td>
+                                <td className="money">{formatMoney(m.sales_amount)}</td>
+                                <td className="money money-negative">
+                                  -{formatMoney(m.commission_amount)} ({m.commission_percent}%)
+                                </td>
+                                <td className="money money-positive">{formatMoney(m.net_amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {clientCalculation.payout_amount > 0 && (
+                    <div className="calculation-actions">
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleClientExecute}
+                        disabled={isExecuting}
+                      >
+                        {isExecuting ? (
+                          <>
+                            <div className="spinner" style={{ width: 16, height: 16 }} />
+                            Создание сделки...
+                          </>
+                        ) : (
+                          <>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="9 11 12 14 22 4" />
+                              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                            </svg>
+                            Выплатить {formatMoney(clientCalculation.payout_amount)} (Cyclops Deal)
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Beneficiary payout form (legacy) */}
+          {payoutMode === 'beneficiary' && (
           <div className="card">
-            <h2 className="card-title">Расчёт выплаты</h2>
+            <h2 className="card-title">Расчёт выплаты (по бенефициару)</h2>
 
             <div className="form-row">
               <div className="form-group">
@@ -492,8 +785,9 @@ export default function PayoutsPage() {
               )}
             </button>
           </div>
+          )
 
-          {calculation && (
+          {payoutMode === 'beneficiary' && calculation && (
             <div className="card calculation-result">
               <h2 className="card-title">Результат расчёта</h2>
 
@@ -746,6 +1040,61 @@ export default function PayoutsPage() {
       <style jsx>{`
         .payouts-page {
           max-width: 1200px;
+        }
+
+        .mode-switcher {
+          display: flex;
+          gap: 4px;
+          background: var(--bg-secondary);
+          border-radius: 10px;
+          padding: 4px;
+          margin-bottom: 20px;
+          width: fit-content;
+        }
+
+        .mode-btn {
+          padding: 8px 20px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          cursor: pointer;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 500;
+          transition: all 0.15s ease;
+        }
+
+        .mode-btn.active {
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          box-shadow: var(--shadow-sm);
+        }
+
+        .result-banner {
+          padding: 12px 16px;
+          border-radius: 8px;
+          margin-bottom: 16px;
+          font-size: 14px;
+        }
+
+        .result-banner.success {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .result-banner.error {
+          background: #fef2f2;
+          color: #dc2626;
+        }
+
+        .result-banner p {
+          margin: 0 0 4px;
+        }
+
+        .result-link {
+          color: inherit;
+          font-weight: 500;
+          text-decoration: underline;
         }
 
         .form-row {
