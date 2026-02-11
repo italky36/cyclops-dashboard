@@ -40,6 +40,18 @@ export interface Client {
   notes: string | null;
   created_at: string;
   updated_at: string;
+
+  // Настройки автовыплат
+  commission_percent: number | null;
+  payout_frequency: 'weekly' | 'biweekly' | 'monthly' | null;
+  payout_exclude_days: number;
+  auto_payout_enabled: boolean;
+  next_payout_at: string | null;
+
+  // Документ (договор)
+  document_filename: string | null;
+  document_mime_type: string | null;
+  document_uploaded_at: string | null;
 }
 
 export interface CreateClientInput {
@@ -65,10 +77,18 @@ export interface CreateClientInput {
   card_last_name?: string;
   beneficiary_id?: string;
   notes?: string;
+  commission_percent?: number;
+  payout_frequency?: string;
+  payout_exclude_days?: number;
 }
 
 export interface UpdateClientInput extends Partial<CreateClientInput> {
   is_active?: boolean;
+  auto_payout_enabled?: boolean;
+  next_payout_at?: string | null;
+  document_filename?: string | null;
+  document_mime_type?: string | null;
+  document_uploaded_at?: string | null;
 }
 
 export interface ClientWithMachineCount extends Client {
@@ -87,6 +107,8 @@ function rowToClient(row: Record<string, unknown>): Client {
   return {
     ...row,
     is_active: row.is_active === 1,
+    auto_payout_enabled: row.auto_payout_enabled === 1,
+    payout_exclude_days: (row.payout_exclude_days as number) ?? 3,
   } as Client;
 }
 
@@ -174,6 +196,18 @@ export function updateClient(id: number, input: UpdateClientInput, user_id?: str
   addField('card_last_name', input.card_last_name);
   addField('beneficiary_id', input.beneficiary_id);
   addField('notes', input.notes);
+  addField('commission_percent', input.commission_percent);
+  addField('payout_frequency', input.payout_frequency);
+  addField('payout_exclude_days', input.payout_exclude_days);
+  addField('next_payout_at', input.next_payout_at);
+  addField('document_filename', input.document_filename);
+  addField('document_mime_type', input.document_mime_type);
+  addField('document_uploaded_at', input.document_uploaded_at);
+
+  if (input.auto_payout_enabled !== undefined) {
+    fields.push('auto_payout_enabled = ?');
+    values.push(input.auto_payout_enabled ? 1 : 0);
+  }
 
   if (input.is_active !== undefined) {
     fields.push('is_active = ?');
@@ -616,4 +650,143 @@ export function createClientPayout(
   logAction('create_client_payout', 'beneficiary_payout', String(payout_id), JSON.stringify({ user_id, client_id: calculation.client_id }));
 
   return { id: payout_id, status: 'pending' };
+}
+
+// ============ РАСЧЁТ ВЫПЛАТ С ЕДИНОЙ КОМИССИЕЙ КЛИЕНТА ============
+
+/**
+ * Расчёт выплаты с использованием клиентской комиссии (единый % для всех машин).
+ * Если у клиента не задан commission_percent — фолбэк на per-machine расчёт.
+ */
+export function calculateClientPayoutUnified(
+  client_id: number,
+  transactions: Array<{ id: string | number; machine_id: string | number; date: string; amount: number }>,
+  end_date?: string
+): ClientPayoutCalculation {
+  const client = getClientById(client_id);
+  if (!client) {
+    throw new Error(`Клиент ${client_id} не найден`);
+  }
+
+  const commissionPercent = client.commission_percent;
+  if (commissionPercent === null || commissionPercent === undefined) {
+    return calculateClientPayout(client_id, transactions, end_date);
+  }
+
+  const db = getDb();
+  const now = end_date || new Date().toISOString().split('T')[0];
+  const machines = getMachinesByClient(client_id);
+
+  if (machines.length === 0) {
+    return {
+      client_id,
+      client_name: client.name,
+      period_start: now,
+      period_end: now,
+      machines: [],
+      total_sales: 0,
+      total_commission: 0,
+      payout_amount: 0,
+    };
+  }
+
+  // Последняя успешная выплата для определения начала периода
+  const lastPayout = db.prepare(`
+    SELECT period_end FROM beneficiary_payouts
+    WHERE client_id = ? AND status = 'completed'
+    ORDER BY period_end DESC LIMIT 1
+  `).get(client_id) as { period_end: string } | undefined;
+
+  const machineResults: ClientPayoutCalculation['machines'] = [];
+  let periodStart = now;
+
+  for (const machine of machines) {
+    const assignmentDate = machine.assigned_at.split('T')[0];
+    const startDate = lastPayout
+      ? (assignmentDate > lastPayout.period_end ? assignmentDate : lastPayout.period_end)
+      : assignmentDate;
+
+    if (startDate < periodStart) {
+      periodStart = startDate;
+    }
+
+    const machineTransactions = transactions.filter(t => {
+      const transaction_term_id = String(t.machine_id);
+      const txDate = t.date.split('T')[0];
+      const machine_term_id = machine.terminal_id || machine.vendista_id;
+      return transaction_term_id === machine_term_id && txDate >= startDate && txDate <= now;
+    });
+
+    const sales_amount = machineTransactions.reduce((sum, t) => sum + t.amount, 0);
+    // Единая комиссия клиента для всех машин
+    const commission_amount = Math.round(sales_amount * (commissionPercent / 100) * 100) / 100;
+    const net_amount = Math.round((sales_amount - commission_amount) * 100) / 100;
+
+    machineResults.push({
+      machine_id: machine.id,
+      vendista_id: machine.vendista_id,
+      machine_name: machine.name,
+      sales_amount,
+      commission_percent: commissionPercent,
+      commission_amount,
+      net_amount,
+    });
+  }
+
+  const total_sales = machineResults.reduce((sum, m) => sum + m.sales_amount, 0);
+  const total_commission = Math.round(total_sales * (commissionPercent / 100) * 100) / 100;
+  const payout_amount = Math.round((total_sales - total_commission) * 100) / 100;
+
+  return {
+    client_id,
+    client_name: client.name,
+    period_start: periodStart,
+    period_end: now,
+    machines: machineResults,
+    total_sales,
+    total_commission,
+    payout_amount,
+  };
+}
+
+// ============ АВТОВЫПЛАТЫ: ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
+
+/**
+ * Возвращает клиентов, для которых подошло время автовыплаты.
+ * Требует: auto_payout_enabled, активность, комиссию, документ, наступившую дату.
+ */
+export function getClientsForAutoPayout(currentDate: string): Client[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM clients
+    WHERE auto_payout_enabled = 1
+      AND is_active = 1
+      AND commission_percent IS NOT NULL
+      AND payout_frequency IS NOT NULL
+      AND next_payout_at IS NOT NULL
+      AND next_payout_at <= ?
+      AND document_filename IS NOT NULL
+  `).all(currentDate) as Array<Record<string, unknown>>;
+  return rows.map(rowToClient);
+}
+
+/**
+ * Вычисляет дату следующей автовыплаты на основе частоты.
+ */
+export function computeNextPayoutDate(frequency: string, fromDate: string): string {
+  const d = new Date(fromDate);
+  switch (frequency) {
+    case 'weekly':
+      d.setDate(d.getDate() + 7);
+      break;
+    case 'biweekly':
+      d.setDate(d.getDate() + 14);
+      break;
+    case 'monthly':
+      d.setMonth(d.getMonth() + 1);
+      break;
+    default:
+      d.setMonth(d.getMonth() + 1);
+  }
+  return d.toISOString().split('T')[0];
 }

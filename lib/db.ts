@@ -337,4 +337,40 @@ function runMigrations(database: Database.Database) {
     database.exec(`ALTER TABLE beneficiary_payouts ADD COLUMN client_id INTEGER REFERENCES clients(id)`);
     database.exec(`CREATE INDEX IF NOT EXISTS idx_beneficiary_payouts_client ON beneficiary_payouts (client_id)`);
   }
+
+  // Добавляем is_auto к beneficiary_payouts
+  if (!bpColumns.some(c => c.name === 'is_auto')) {
+    database.exec(`ALTER TABLE beneficiary_payouts ADD COLUMN is_auto INTEGER DEFAULT 0`);
+  }
+
+  // Добавляем поля автовыплат к clients
+  const clientColumns = database.pragma('table_info(clients)') as Array<{ name: string }>;
+  const clientColumnNames = clientColumns.map(c => c.name);
+
+  if (!clientColumnNames.includes('commission_percent')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN commission_percent REAL DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('payout_frequency')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_frequency TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('payout_exclude_days')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_exclude_days INTEGER DEFAULT 3`);
+  }
+  if (!clientColumnNames.includes('auto_payout_enabled')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN auto_payout_enabled INTEGER DEFAULT 0`);
+  }
+  if (!clientColumnNames.includes('next_payout_at')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN next_payout_at TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('document_filename')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN document_filename TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('document_mime_type')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN document_mime_type TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('document_uploaded_at')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN document_uploaded_at TEXT DEFAULT NULL`);
+  }
+
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_clients_auto_payout ON clients (auto_payout_enabled, next_payout_at)`);
 }

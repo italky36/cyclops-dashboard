@@ -31,6 +31,14 @@ interface Client {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  commission_percent: number | null;
+  payout_frequency: string | null;
+  payout_exclude_days: number;
+  auto_payout_enabled: boolean;
+  next_payout_at: string | null;
+  document_filename: string | null;
+  document_mime_type: string | null;
+  document_uploaded_at: string | null;
 }
 
 interface Machine {
@@ -102,6 +110,18 @@ export default function ClientDetailPage() {
   const [payoutResult, setPayoutResult] = useState<{ success: boolean; message: string; deal_id?: string } | null>(null);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // Auto-payout settings
+  const [clientCommission, setClientCommission] = useState('');
+  const [payoutFrequency, setPayoutFrequency] = useState('');
+  const [excludeDays, setExcludeDays] = useState('3');
+  const [autoPayoutEnabled, setAutoPayoutEnabled] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Document
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
   const loadClient = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -133,6 +153,16 @@ export default function ClientDetailPage() {
     loadClient();
     loadMachines();
   }, [loadClient, loadMachines]);
+
+  // Инициализация настроек автовыплат из данных клиента
+  useEffect(() => {
+    if (client) {
+      setClientCommission(client.commission_percent?.toString() || '');
+      setPayoutFrequency(client.payout_frequency || '');
+      setExcludeDays(String(client.payout_exclude_days ?? 3));
+      setAutoPayoutEnabled(client.auto_payout_enabled);
+    }
+  }, [client]);
 
   const handleAssignMachine = async () => {
     if (!selectedMachine) return;
@@ -171,6 +201,100 @@ export default function ClientDetailPage() {
       loadMachines();
     } catch {
       alert('Ошибка при отвязке');
+    }
+  };
+
+  const handleSaveAutoPayoutSettings = async () => {
+    setIsSavingSettings(true);
+    setSettingsMessage(null);
+    try {
+      const commission = clientCommission ? parseFloat(clientCommission) : null;
+
+      // Валидация при включении автовыплат
+      if (autoPayoutEnabled) {
+        if (commission === null || isNaN(commission)) {
+          setSettingsMessage({ type: 'error', text: 'Укажите комиссию для включения автовыплат' });
+          setIsSavingSettings(false);
+          return;
+        }
+        if (!payoutFrequency) {
+          setSettingsMessage({ type: 'error', text: 'Выберите частоту выплат' });
+          setIsSavingSettings(false);
+          return;
+        }
+        if (!client?.document_filename) {
+          setSettingsMessage({ type: 'error', text: 'Загрузите документ (договор) для включения автовыплат' });
+          setIsSavingSettings(false);
+          return;
+        }
+      }
+
+      const updates: Record<string, unknown> = {
+        commission_percent: commission,
+        payout_frequency: payoutFrequency || null,
+        payout_exclude_days: parseInt(excludeDays) || 3,
+        auto_payout_enabled: autoPayoutEnabled,
+      };
+
+      // Устанавливаем начальную дату автовыплаты при первом включении
+      if (autoPayoutEnabled && !client?.next_payout_at && payoutFrequency) {
+        const today = new Date().toISOString().split('T')[0];
+        updates.next_payout_at = today;
+      }
+
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Ошибка сохранения');
+      }
+      setSettingsMessage({ type: 'success', text: 'Настройки сохранены' });
+      await loadClient();
+    } catch (err) {
+      setSettingsMessage({ type: 'error', text: err instanceof Error ? err.message : 'Ошибка' });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleUploadDocument = async () => {
+    if (!documentFile) return;
+    setIsUploadingDoc(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', documentFile);
+      const res = await fetch(`/api/clients/${clientId}/document`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Ошибка загрузки');
+      }
+      setDocumentFile(null);
+      addRecentAction(`Загружен документ для клиента ${client?.name}`);
+      await loadClient();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setIsUploadingDoc(false);
+    }
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!confirm('Удалить документ?')) return;
+    try {
+      const res = await fetch(`/api/clients/${clientId}/document`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Ошибка удаления');
+      }
+      await loadClient();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
     }
   };
 
@@ -300,6 +424,138 @@ export default function ClientDetailPage() {
               </>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Auto-Payout Settings */}
+      <div className="section">
+        <div className="section-header">
+          <h2>Настройки автовыплат</h2>
+          {client.auto_payout_enabled && (
+            <span className="badge badge-success">Активно</span>
+          )}
+        </div>
+
+        <div className="auto-payout-form">
+          <div className="form-row">
+            <div className="form-group">
+              <label>Комиссия (%)</label>
+              <input
+                type="number"
+                className="input"
+                value={clientCommission}
+                onChange={(e) => setClientCommission(e.target.value)}
+                min={0}
+                max={100}
+                step={0.01}
+                placeholder="Напр. 3"
+                style={{ width: 120 }}
+              />
+            </div>
+            <div className="form-group">
+              <label>Частота выплат</label>
+              <select
+                className="input"
+                value={payoutFrequency}
+                onChange={(e) => setPayoutFrequency(e.target.value)}
+              >
+                <option value="">Не задана</option>
+                <option value="weekly">Еженедельно</option>
+                <option value="biweekly">Раз в 2 недели</option>
+                <option value="monthly">Ежемесячно</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Исключить дней</label>
+              <input
+                type="number"
+                className="input"
+                value={excludeDays}
+                onChange={(e) => setExcludeDays(e.target.value)}
+                min={0}
+                max={30}
+                style={{ width: 80 }}
+              />
+            </div>
+          </div>
+
+          <div className="form-row" style={{ alignItems: 'center', marginTop: 12 }}>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={autoPayoutEnabled}
+                onChange={(e) => setAutoPayoutEnabled(e.target.checked)}
+              />
+              Автоматические выплаты включены
+            </label>
+            {client.next_payout_at && (
+              <span className="text-secondary text-sm">
+                Следующая выплата: {client.next_payout_at}
+              </span>
+            )}
+          </div>
+
+          {settingsMessage && (
+            <div className={`result-message ${settingsMessage.type}`} style={{ marginTop: 12 }}>
+              {settingsMessage.text}
+            </div>
+          )}
+
+          <button
+            className="btn btn-primary"
+            onClick={handleSaveAutoPayoutSettings}
+            disabled={isSavingSettings}
+            style={{ marginTop: 12 }}
+          >
+            {isSavingSettings ? 'Сохранение...' : 'Сохранить настройки'}
+          </button>
+        </div>
+
+        {/* Document */}
+        <div className="document-section">
+          <h3>Документ (договор)</h3>
+          {client.document_filename ? (
+            <div className="document-info">
+              <span>{client.document_filename}</span>
+              {client.document_uploaded_at && (
+                <span className="text-secondary text-sm">
+                  загружен {new Date(client.document_uploaded_at).toLocaleDateString('ru-RU')}
+                </span>
+              )}
+              <a
+                href={`/api/clients/${clientId}/document`}
+                className="text-link text-sm"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Скачать
+              </a>
+              <button className="btn btn-sm btn-danger" onClick={handleDeleteDocument}>
+                Удалить
+              </button>
+            </div>
+          ) : (
+            <div className="document-upload">
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.gif,.tiff,.bmp"
+                onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
+                className="file-input"
+              />
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={handleUploadDocument}
+                disabled={!documentFile || isUploadingDoc}
+              >
+                {isUploadingDoc ? 'Загрузка...' : 'Загрузить'}
+              </button>
+            </div>
+          )}
+          {!client.document_filename && (
+            <p className="text-secondary text-sm" style={{ marginTop: 8 }}>
+              Без документа выплаты невозможны. Поддерживаемые форматы: PDF, JPG, PNG, TIFF, BMP.
+            </p>
+          )}
         </div>
       </div>
 
@@ -436,7 +692,7 @@ export default function ClientDetailPage() {
                 <strong>{calculation.total_sales.toFixed(2)} руб.</strong>
               </div>
               <div className="calc-item">
-                <span>Комиссия платформы:</span>
+                <span>Комиссия{client.commission_percent !== null ? ` (${client.commission_percent}%)` : ''}:</span>
                 <strong>{calculation.total_commission.toFixed(2)} руб.</strong>
               </div>
               <div className="calc-item highlight">
@@ -735,12 +991,66 @@ export default function ClientDetailPage() {
         .btn-secondary:hover { background: var(--bg-tertiary); }
         .btn-danger { background: transparent; color: var(--error-color, #dc2626); }
         .btn-danger:hover { background: var(--error-bg, #fef2f2); }
+        .auto-payout-form {
+          padding: 16px;
+          background: var(--bg-secondary);
+          border-radius: 8px;
+        }
+        .form-row {
+          display: flex;
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+        .checkbox-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--text-primary);
+          cursor: pointer;
+        }
+        .checkbox-label input[type="checkbox"] {
+          width: 18px;
+          height: 18px;
+          accent-color: var(--accent-color, #6366f1);
+        }
+        .document-section {
+          margin-top: 20px;
+          border-top: 1px solid var(--border-color);
+          padding-top: 16px;
+        }
+        .document-section h3 {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          margin: 0 0 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .document-info {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .document-upload {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+        }
+        .file-input {
+          font-size: 13px;
+          color: var(--text-primary);
+        }
         @media (max-width: 767px) {
           .page-container { padding: 16px; }
           .cards-grid { grid-template-columns: 1fr; }
           .calc-summary { grid-template-columns: 1fr 1fr; }
           .payout-controls { flex-direction: column; }
           .assign-form { flex-direction: column; }
+          .form-row { flex-direction: column; }
+          .document-info { flex-direction: column; align-items: flex-start; }
         }
       `}</style>
     </div>

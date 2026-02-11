@@ -4,13 +4,14 @@ import { createVendistaClient, isVendistaConfigured } from '@/lib/vendista';
 import {
   getClientById,
   getMachinesByClient,
-  calculateClientPayout,
+  calculateClientPayoutUnified,
   createClientPayout,
   buildDealParamsForClient,
   getPlatformSettings,
 } from '@/lib/clients';
 import { updatePayoutStatus } from '@/lib/vending';
 import { getCyclopsClient, getLayerFromRequest } from '@/lib/cyclops-helpers';
+import { getClientDocumentBase64 } from '@/lib/documents';
 
 // POST /api/clients/[clientId]/payout — расчёт или выполнение выплаты
 export async function POST(
@@ -74,7 +75,7 @@ export async function POST(
       }
     }
 
-    const calculation = calculateClientPayout(id, transactions, end_date);
+    const calculation = calculateClientPayoutUnified(id, transactions, end_date);
 
     // Только расчёт (preview)
     if (action === 'calculate') {
@@ -143,7 +144,38 @@ export async function POST(
 
         const dealId = (createResult.result as { deal_id: string }).deal_id;
 
-        // 2. Исполняем сделку
+        // 2. Загружаем документ в сделку (если загружен)
+        if (client.document_filename) {
+          const docBase64 = getClientDocumentBase64(id, client.document_filename);
+          if (docBase64) {
+            const docResult = await cyclopsClient.uploadDocumentDeal({
+              deal_id: dealId,
+              recipient_number: 1,
+              document_type: 'service_agreement',
+              file_name: client.document_filename,
+              file_content: docBase64,
+            });
+            if (docResult.error) {
+              console.error('[Client Payout] Document upload error:', docResult.error);
+              // Если автовыплаты включены — документ обязателен, ошибка критична
+              if (client.auto_payout_enabled) {
+                updatePayoutStatus(
+                  payout.id, 'failed', dealId,
+                  JSON.stringify(docResult.error),
+                  `Ошибка загрузки документа: ${docResult.error.message}`
+                );
+                return NextResponse.json({
+                  error: 'Ошибка загрузки документа в сделку',
+                  deal_id: dealId,
+                  details: docResult.error,
+                  payout_id: payout.id,
+                }, { status: 400 });
+              }
+            }
+          }
+        }
+
+        // 3. Исполняем сделку
         const executeResult = await cyclopsClient.call('execute_deal', { deal_id: dealId });
 
         if (executeResult.error) {

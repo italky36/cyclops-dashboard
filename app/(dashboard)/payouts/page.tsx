@@ -785,7 +785,7 @@ export default function PayoutsPage() {
               )}
             </button>
           </div>
-          )
+          )}
 
           {payoutMode === 'beneficiary' && calculation && (
             <div className="card calculation-result">
