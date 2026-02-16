@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAppStore } from '@/lib/store';
+import { buildClientPath } from '@/lib/client-slug';
 
 interface ClientListItem {
   id: number;
@@ -19,11 +20,14 @@ interface ClientListItem {
 
 const PAYOUT_TYPE_LABELS: Record<string, string> = {
   payment_contract: 'Банк. перевод',
-  payment_contract_by_sbp_v2: 'СБП',
+  payment_contract_by_sbp: 'СБП',
+  payment_contract_by_sbp_v2: 'СБП (v2)',
   payment_contract_to_card: 'Карта',
+  none: 'Без шаблона',
 };
 
 export default function ClientsPage() {
+  const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
   const [clients, setClients] = useState<ClientListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,7 +69,11 @@ export default function ClientsPage() {
         const data = await res.json();
         throw new Error(data.error || 'Ошибка удаления');
       }
-      addRecentAction(`Удалён клиент: ${name}`);
+      addRecentAction({
+        type: 'Удаление клиента',
+        description: `Удалён клиент: ${name}`,
+        layer,
+      });
       loadClients();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка');
@@ -136,7 +144,7 @@ export default function ClientsPage() {
               {clients.map((client) => (
                 <tr key={client.id}>
                   <td>
-                    <Link href={`/clients/${client.id}`} className="link">
+                    <Link href={buildClientPath(client.id, client.name)} className="link">
                       {client.name}
                     </Link>
                     {client.contact_name && (
@@ -157,7 +165,7 @@ export default function ClientsPage() {
                   </td>
                   <td>
                     <div className="action-buttons">
-                      <Link href={`/clients/${client.id}`} className="btn btn-sm btn-secondary">
+                      <Link href={buildClientPath(client.id, client.name)} className="btn btn-sm btn-secondary">
                         Детали
                       </Link>
                       <button

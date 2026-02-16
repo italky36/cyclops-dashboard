@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  serverExternalPackages: ['better-sqlite3'],
-  
+
   // Переменные окружения для клиента (только публичные)
   env: {
     // Публичные переменные

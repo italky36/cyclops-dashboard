@@ -58,10 +58,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validTypes: PayoutType[] = ['payment_contract', 'payment_contract_by_sbp_v2', 'payment_contract_to_card'];
+    const validTypes: PayoutType[] = [
+      'payment_contract',
+      'payment_contract_by_sbp',
+      'payment_contract_by_sbp_v2',
+      'payment_contract_to_card',
+      'none',
+    ];
     if (!validTypes.includes(body.payout_type)) {
       return NextResponse.json(
         { error: `Недопустимый payout_type. Допустимые: ${validTypes.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    const autoPayoutEnabled =
+      body.auto_payout_enabled === true || body.auto_payout_enabled === 'true';
+    if (body.payout_type === 'none' && autoPayoutEnabled) {
+      return NextResponse.json(
+        { error: 'Нельзя включить автовыплаты без шаблона выплаты' },
         { status: 400 }
       );
     }
@@ -76,7 +91,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (body.payout_type === 'payment_contract_by_sbp_v2') {
+    if (body.payout_type === 'payment_contract_by_sbp' || body.payout_type === 'payment_contract_by_sbp_v2') {
       if (!body.sbp_phone || !body.sbp_bank_id || !body.sbp_first_name || !body.sbp_last_name) {
         return NextResponse.json(
           { error: 'Для СБП обязательны: sbp_phone, sbp_bank_id, sbp_first_name, sbp_last_name' },
@@ -94,6 +109,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const payoutExcludeDaysRaw =
+      body.payout_exclude_days !== undefined && body.payout_exclude_days !== null
+        ? Number(body.payout_exclude_days)
+        : undefined;
+    const payoutExcludeDays =
+      typeof payoutExcludeDaysRaw === 'number' && Number.isNaN(payoutExcludeDaysRaw)
+        ? 0
+        : payoutExcludeDaysRaw;
+    const nextPayoutAt =
+      body.next_payout_at ||
+      (autoPayoutEnabled ? new Date().toISOString().split('T')[0] : undefined);
+
     const input: CreateClientInput = {
       name: body.name,
       contact_name: body.contact_name,
@@ -106,6 +133,7 @@ export async function POST(request: NextRequest) {
       inn: body.inn,
       kpp: body.kpp,
       recipient_name: body.recipient_name,
+      payout_purpose: body.payout_purpose,
       sbp_phone: body.sbp_phone,
       sbp_bank_id: body.sbp_bank_id,
       sbp_first_name: body.sbp_first_name,
@@ -117,6 +145,11 @@ export async function POST(request: NextRequest) {
       card_last_name: body.card_last_name,
       beneficiary_id: body.beneficiary_id,
       notes: body.notes,
+      commission_percent: body.commission_percent,
+      payout_frequency: body.payout_frequency,
+      payout_exclude_days: payoutExcludeDays,
+      auto_payout_enabled: autoPayoutEnabled,
+      next_payout_at: nextPayoutAt,
     };
 
     const client = createClient(input, body.user_id);

@@ -190,6 +190,7 @@ function ensureSchema(database: Database.Database) {
       inn TEXT,
       kpp TEXT,
       recipient_name TEXT,
+      payout_purpose TEXT,
 
       -- Реквизиты для СБП
       sbp_phone TEXT,
@@ -353,8 +354,11 @@ function runMigrations(database: Database.Database) {
   if (!clientColumnNames.includes('payout_frequency')) {
     database.exec(`ALTER TABLE clients ADD COLUMN payout_frequency TEXT DEFAULT NULL`);
   }
+  if (!clientColumnNames.includes('payout_purpose')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_purpose TEXT DEFAULT NULL`);
+  }
   if (!clientColumnNames.includes('payout_exclude_days')) {
-    database.exec(`ALTER TABLE clients ADD COLUMN payout_exclude_days INTEGER DEFAULT 3`);
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_exclude_days INTEGER DEFAULT 0`);
   }
   if (!clientColumnNames.includes('auto_payout_enabled')) {
     database.exec(`ALTER TABLE clients ADD COLUMN auto_payout_enabled INTEGER DEFAULT 0`);
@@ -370,6 +374,9 @@ function runMigrations(database: Database.Database) {
   }
   if (!clientColumnNames.includes('document_uploaded_at')) {
     database.exec(`ALTER TABLE clients ADD COLUMN document_uploaded_at TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('payout_virtual_account')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_virtual_account TEXT DEFAULT NULL`);
   }
 
   database.exec(`CREATE INDEX IF NOT EXISTS idx_clients_auto_payout ON clients (auto_payout_enabled, next_payout_at)`);

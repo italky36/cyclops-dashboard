@@ -5,6 +5,7 @@ import {
   deleteClient,
   getMachinesByClient,
 } from '@/lib/clients';
+import { parseClientIdParam } from '@/lib/client-slug';
 import { getPayoutHistory } from '@/lib/vending';
 
 // GET /api/clients/[clientId] — детали клиента
@@ -14,8 +15,8 @@ export async function GET(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 
@@ -25,8 +26,7 @@ export async function GET(
     }
 
     const machines = getMachinesByClient(id);
-    const payouts = getPayoutHistory({ beneficiary_id: '' })
-      .filter(p => (p as Record<string, unknown>).client_id === id);
+    const payouts = getPayoutHistory({ client_id: id });
 
     return NextResponse.json({ client, machines, payouts });
   } catch (error) {
@@ -45,8 +45,8 @@ export async function PUT(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 
@@ -74,8 +74,8 @@ export async function DELETE(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 

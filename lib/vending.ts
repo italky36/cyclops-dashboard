@@ -34,6 +34,7 @@ export interface MachineWithAssignment extends VendingMachine {
 export interface BeneficiaryPayout {
   id: number;
   beneficiary_id: string;
+  client_id: number | null;
   period_start: string;
   period_end: string;
   total_sales: number;
@@ -45,6 +46,7 @@ export interface BeneficiaryPayout {
   error_message: string | null;
   created_at: string;
   executed_at: string | null;
+  is_auto: number | null;
 }
 
 export interface PayoutDetail {
@@ -86,6 +88,64 @@ export function syncMachines(machines: VendistaMachine[]): number {
   const db = getDb();
   const now = new Date().toISOString();
 
+  // Фильтруем только активные машины с terminal_id
+  const activeMachines = machines.filter(m => m.terminal_id !== null && m.terminal_id !== undefined);
+  const skippedCount = machines.length - activeMachines.length;
+
+  console.log('[syncMachines] Syncing machines:', {
+    total: machines.length,
+    active_with_terminal: activeMachines.length,
+    skipped_without_terminal: skippedCount,
+    sample: activeMachines.slice(0, 3).map(m => ({
+      id: m.id,
+      terminal_id: m.terminal_id,
+      name: m.name,
+    })),
+  });
+
+  // Получаем список vendista_id активных машин
+  const activeVendistaIds = activeMachines.map(m => String(m.id));
+
+  // Помечаем как неактивные все машины без terminal_id
+  const deactivateWithoutTerminal = db.prepare(`
+    UPDATE vending_machines
+    SET is_active = 0, synced_at = ?
+    WHERE terminal_id IS NULL OR terminal_id = ''
+  `).run(now);
+
+  if (deactivateWithoutTerminal.changes > 0) {
+    console.log('[syncMachines] Deactivated machines without terminal_id:', deactivateWithoutTerminal.changes);
+
+    // Отвязываем неактивные машины от клиентов
+    const unassignResult = db.prepare(`
+      UPDATE machine_assignments
+      SET unassigned_at = ?
+      WHERE unassigned_at IS NULL
+      AND machine_id IN (
+        SELECT id FROM vending_machines
+        WHERE terminal_id IS NULL OR terminal_id = '' OR is_active = 0
+      )
+    `).run(now);
+
+    if (unassignResult.changes > 0) {
+      console.log('[syncMachines] Unassigned inactive machines from clients:', unassignResult.changes);
+    }
+  }
+
+  // Помечаем как неактивные все машины, которых нет в списке активных
+  if (activeVendistaIds.length > 0) {
+    const placeholders = activeVendistaIds.map(() => '?').join(',');
+    const deactivateResult = db.prepare(`
+      UPDATE vending_machines
+      SET is_active = 0, synced_at = ?
+      WHERE vendista_id NOT IN (${placeholders})
+    `).run(now, ...activeVendistaIds);
+
+    if (deactivateResult.changes > 0) {
+      console.log('[syncMachines] Deactivated machines not in active list:', deactivateResult.changes);
+    }
+  }
+
   const insertStmt = db.prepare(`
     INSERT INTO vending_machines (vendista_id, name, model, address, serial_number, terminal_id, is_active, synced_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -100,20 +160,27 @@ export function syncMachines(machines: VendistaMachine[]): number {
   `);
 
   let count = 0;
-  for (const machine of machines) {
+  for (const machine of activeMachines) {
     const vendista_id = String(machine.id);
     const name = machine.name || null;
     const model = machine.model || null;
     const address = machine.address || null;
     const serial_number = machine.number ? String(machine.number) : null;
-    const terminal_id = machine.terminal_id ? String(machine.terminal_id) : null;
+    const terminal_id = String(machine.terminal_id); // Гарантированно не null
+
     const is_active = machine.state_id === 1 ? 1 : 0;
 
     insertStmt.run(vendista_id, name, model, address, serial_number, terminal_id, is_active, now, now);
     count++;
   }
 
-  logAction('sync_machines', 'vending_machine', null, JSON.stringify({ count }));
+  console.log('[syncMachines] Sync complete:', {
+    synced: count,
+    skipped: skippedCount,
+    deactivated_without_terminal: deactivateWithoutTerminal.changes,
+  });
+
+  logAction('sync_machines', 'vending_machine', null, JSON.stringify({ count, deactivated: deactivateWithoutTerminal.changes }));
 
   return count;
 }
@@ -374,6 +441,21 @@ export interface PayoutCalculation {
   payout_amount: number;
 }
 
+const parseDateInput = (value: string, endOfDay: boolean): Date => {
+  if (!value) return new Date(NaN);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}${endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z'}`);
+  }
+  return new Date(value);
+};
+
+const normalizeEndDateTime = (value?: string): Date => {
+  if (!value) return new Date();
+  return parseDateInput(value, true);
+};
+
+const normalizeStartDateTime = (value: string): Date => parseDateInput(value, false);
+
 /**
  * Расчет суммы к выплате для бенефициара
  * Учитывает только невыплаченные продажи с момента привязки или последней выплаты
@@ -384,7 +466,8 @@ export function calculatePayout(
   end_date?: string
 ): PayoutCalculation {
   const db = getDb();
-  const now = end_date || new Date().toISOString().split('T')[0];
+  const endDate = normalizeEndDateTime(end_date);
+  const now = endDate.toISOString();
 
   // Получаем активные привязки для бенефициара
   const assignments = getMachinesByBeneficiary(beneficiary_id);
@@ -410,27 +493,28 @@ export function calculatePayout(
 
   const machineResults: PayoutCalculation['machines'] = [];
   let periodStart = now;
+  let periodStartTs = endDate.getTime();
 
   for (const machine of assignments) {
     // Определяем начало периода для этого автомата
     // Берем максимум из: даты привязки и даты последней выплаты
-    const assignmentDate = machine.assignment!.assigned_at.split('T')[0];
-    const startDate = lastPayout
-      ? (assignmentDate > lastPayout.period_end ? assignmentDate : lastPayout.period_end)
-      : assignmentDate;
+    const assignmentTime = normalizeStartDateTime(machine.assignment!.assigned_at).getTime();
+    const lastPayoutTime = lastPayout ? normalizeStartDateTime(lastPayout.period_end).getTime() : null;
+    const startTime = lastPayoutTime !== null ? Math.max(assignmentTime, lastPayoutTime) : assignmentTime;
 
-    if (startDate < periodStart) {
-      periodStart = startDate;
+    if (startTime < periodStartTs) {
+      periodStartTs = startTime;
+      periodStart = new Date(startTime).toISOString();
     }
 
     // Фильтруем транзакции по этому автомату за период
     // Используем terminal_id для сопоставления (так как транзакции приходят по terminal_id)
     const machineTransactions = transactions.filter(t => {
       const transaction_term_id = String(t.machine_id);
-      const txDate = t.date.split('T')[0];
-      // Сопоставляем по terminal_id (если есть) или по vendista_id
-      const machine_term_id = machine.terminal_id || machine.vendista_id;
-      return transaction_term_id === machine_term_id && txDate >= startDate && txDate <= now;
+      const txTime = new Date(t.date).getTime();
+      if (Number.isNaN(txTime)) return false;
+      const machineIds = [machine.vendista_id, machine.terminal_id].filter(Boolean).map(String);
+      return machineIds.includes(transaction_term_id) && txTime >= startTime && txTime <= endDate.getTime();
     });
 
     const sales_amount = machineTransactions.reduce((sum, t) => sum + t.amount, 0);
@@ -510,6 +594,7 @@ export function createPayout(calculation: PayoutCalculation, user_id?: string): 
   return {
     id: payout_id,
     beneficiary_id: calculation.beneficiary_id,
+    client_id: null,
     period_start: calculation.period_start,
     period_end: calculation.period_end,
     total_sales: calculation.total_sales,
@@ -521,6 +606,7 @@ export function createPayout(calculation: PayoutCalculation, user_id?: string): 
     error_message: null,
     created_at: now,
     executed_at: null,
+    is_auto: 0,
   };
 }
 
@@ -564,6 +650,7 @@ export function getPayoutById(payout_id: number): BeneficiaryPayout | null {
  */
 export function getPayoutHistory(filters?: {
   beneficiary_id?: string;
+  client_id?: number;
   status?: string;
   date_from?: string;
   date_to?: string;
@@ -575,6 +662,10 @@ export function getPayoutHistory(filters?: {
   if (filters?.beneficiary_id) {
     sql += ` AND beneficiary_id = ?`;
     params.push(filters.beneficiary_id);
+  }
+  if (filters?.client_id !== undefined) {
+    sql += ` AND client_id = ?`;
+    params.push(filters.client_id);
   }
   if (filters?.status) {
     sql += ` AND status = ?`;

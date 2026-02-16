@@ -86,7 +86,7 @@ export function PaymentFilters({
               <input
                 type="text"
                 className="filter-input"
-                placeholder="40702810..."
+                placeholder="40702810000000000001"
                 maxLength={20}
                 value={filters.account || ''}
                 onChange={(e) => updateFilter('account', e.target.value || undefined)}

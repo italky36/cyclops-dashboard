@@ -3,7 +3,12 @@ import { logAction } from './vending';
 
 // ============ ТИПЫ ============
 
-export type PayoutType = 'payment_contract' | 'payment_contract_by_sbp_v2' | 'payment_contract_to_card';
+export type PayoutType =
+  | 'payment_contract'
+  | 'payment_contract_by_sbp'
+  | 'payment_contract_by_sbp_v2'
+  | 'payment_contract_to_card'
+  | 'none';
 
 export interface Client {
   id: number;
@@ -21,6 +26,7 @@ export interface Client {
   inn: string | null;
   kpp: string | null;
   recipient_name: string | null;
+  payout_purpose: string | null;
 
   // СБП
   sbp_phone: string | null;
@@ -47,6 +53,7 @@ export interface Client {
   payout_exclude_days: number;
   auto_payout_enabled: boolean;
   next_payout_at: string | null;
+  payout_virtual_account: string | null;
 
   // Документ (договор)
   document_filename: string | null;
@@ -66,6 +73,7 @@ export interface CreateClientInput {
   inn?: string;
   kpp?: string;
   recipient_name?: string;
+  payout_purpose?: string;
   sbp_phone?: string;
   sbp_bank_id?: string;
   sbp_first_name?: string;
@@ -80,6 +88,9 @@ export interface CreateClientInput {
   commission_percent?: number;
   payout_frequency?: string;
   payout_exclude_days?: number;
+  auto_payout_enabled?: boolean;
+  next_payout_at?: string | null;
+  payout_virtual_account?: string;
 }
 
 export interface UpdateClientInput extends Partial<CreateClientInput> {
@@ -108,24 +119,28 @@ function rowToClient(row: Record<string, unknown>): Client {
     ...row,
     is_active: row.is_active === 1,
     auto_payout_enabled: row.auto_payout_enabled === 1,
-    payout_exclude_days: (row.payout_exclude_days as number) ?? 3,
+    payout_exclude_days: (row.payout_exclude_days as number) ?? 0,
   } as Client;
 }
 
 export function createClient(input: CreateClientInput, user_id?: string): Client {
   const db = getDb();
   const now = new Date().toISOString();
+  const payoutExcludeDays = typeof input.payout_exclude_days === 'number' ? input.payout_exclude_days : 0;
+  const autoPayoutEnabled = input.auto_payout_enabled ? 1 : 0;
 
   const result = db.prepare(`
     INSERT INTO clients (
       name, contact_name, phone, email,
       payout_type,
       bank_account, bank_code, bank_name, inn, kpp, recipient_name,
+      payout_purpose,
       sbp_phone, sbp_bank_id, sbp_first_name, sbp_middle_name, sbp_last_name,
       card_number_encrypted, card_first_name, card_middle_name, card_last_name,
       beneficiary_id, notes, is_active,
+      commission_percent, payout_frequency, payout_exclude_days, auto_payout_enabled, next_payout_at, payout_virtual_account,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.name,
     input.contact_name || null,
@@ -138,6 +153,7 @@ export function createClient(input: CreateClientInput, user_id?: string): Client
     input.inn || null,
     input.kpp || null,
     input.recipient_name || null,
+    input.payout_purpose || null,
     input.sbp_phone || null,
     input.sbp_bank_id || null,
     input.sbp_first_name || null,
@@ -149,6 +165,12 @@ export function createClient(input: CreateClientInput, user_id?: string): Client
     input.card_last_name || null,
     input.beneficiary_id || null,
     input.notes || null,
+    input.commission_percent ?? null,
+    input.payout_frequency ?? null,
+    payoutExcludeDays,
+    autoPayoutEnabled,
+    input.next_payout_at || null,
+    input.payout_virtual_account || null,
     now,
     now
   );
@@ -185,6 +207,7 @@ export function updateClient(id: number, input: UpdateClientInput, user_id?: str
   addField('inn', input.inn);
   addField('kpp', input.kpp);
   addField('recipient_name', input.recipient_name);
+  addField('payout_purpose', input.payout_purpose);
   addField('sbp_phone', input.sbp_phone);
   addField('sbp_bank_id', input.sbp_bank_id);
   addField('sbp_first_name', input.sbp_first_name);
@@ -200,6 +223,7 @@ export function updateClient(id: number, input: UpdateClientInput, user_id?: str
   addField('payout_frequency', input.payout_frequency);
   addField('payout_exclude_days', input.payout_exclude_days);
   addField('next_payout_at', input.next_payout_at);
+  addField('payout_virtual_account', input.payout_virtual_account);
   addField('document_filename', input.document_filename);
   addField('document_mime_type', input.document_mime_type);
   addField('document_uploaded_at', input.document_uploaded_at);
@@ -443,10 +467,26 @@ export interface ClientPayoutCalculation {
   payout_amount: number;
 }
 
+const parseDateInput = (value: string, endOfDay: boolean): Date => {
+  if (!value) return new Date(NaN);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}${endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z'}`);
+  }
+  return new Date(value);
+};
+
+const normalizeEndDateTime = (value?: string): Date => {
+  if (!value) return new Date();
+  return parseDateInput(value, true);
+};
+
+const normalizeStartDateTime = (value: string): Date => parseDateInput(value, false);
+
 export function calculateClientPayout(
   client_id: number,
   transactions: Array<{ id: string | number; machine_id: string | number; date: string; amount: number }>,
-  end_date?: string
+  end_date?: string,
+  start_date?: string
 ): ClientPayoutCalculation {
   const db = getDb();
   const client = getClientById(client_id);
@@ -454,14 +494,17 @@ export function calculateClientPayout(
     throw new Error(`Клиент ${client_id} не найден`);
   }
 
-  const now = end_date || new Date().toISOString().split('T')[0];
+  const endDate = normalizeEndDateTime(end_date);
+  const requestedStart = start_date ? normalizeStartDateTime(start_date) : null;
+  const requestedStartTs = requestedStart ? requestedStart.getTime() : null;
+  const now = endDate.toISOString();
   const machines = getMachinesByClient(client_id);
 
   if (machines.length === 0) {
     return {
       client_id,
       client_name: client.name,
-      period_start: now,
+      period_start: requestedStart ? requestedStart.toISOString() : now,
       period_end: now,
       machines: [],
       total_sales: 0,
@@ -478,23 +521,26 @@ export function calculateClientPayout(
   `).get(client_id) as { period_end: string } | undefined;
 
   const machineResults: ClientPayoutCalculation['machines'] = [];
-  let periodStart = now;
+  let periodStart = requestedStart ? requestedStart.toISOString() : now;
+  let periodStartTs = requestedStartTs ?? endDate.getTime();
 
   for (const machine of machines) {
-    const assignmentDate = machine.assigned_at.split('T')[0];
-    const startDate = lastPayout
-      ? (assignmentDate > lastPayout.period_end ? assignmentDate : lastPayout.period_end)
-      : assignmentDate;
+    const assignmentTime = normalizeStartDateTime(machine.assigned_at).getTime();
+    const lastPayoutTime = lastPayout ? normalizeStartDateTime(lastPayout.period_end).getTime() : null;
+    const baseStartTime = requestedStartTs !== null ? requestedStartTs : assignmentTime;
+    const startTime = lastPayoutTime !== null ? Math.max(baseStartTime, lastPayoutTime) : baseStartTime;
 
-    if (startDate < periodStart) {
-      periodStart = startDate;
+    if (startTime < periodStartTs) {
+      periodStartTs = startTime;
+      periodStart = new Date(startTime).toISOString();
     }
 
     const machineTransactions = transactions.filter(t => {
       const transaction_term_id = String(t.machine_id);
-      const txDate = t.date.split('T')[0];
-      const machine_term_id = machine.terminal_id || machine.vendista_id;
-      return transaction_term_id === machine_term_id && txDate >= startDate && txDate <= now;
+      const txTime = new Date(t.date).getTime();
+      if (Number.isNaN(txTime)) return false;
+      const machineIds = [machine.vendista_id, machine.terminal_id].filter(Boolean).map(String);
+      return machineIds.includes(transaction_term_id) && txTime >= startTime && txTime <= endDate.getTime();
     });
 
     const sales_amount = machineTransactions.reduce((sum, t) => sum + t.amount, 0);
@@ -544,7 +590,7 @@ export function buildDealParamsForClient(
 
   const payers = [{ virtual_account: payerVirtualAccount, amount: dealAmount }];
 
-  let recipient: Record<string, unknown>;
+  let recipient: Record<string, unknown> | null = null;
 
   switch (client.payout_type) {
     case 'payment_contract':
@@ -558,6 +604,21 @@ export function buildDealParamsForClient(
         inn: client.inn!,
         kpp: client.kpp || undefined,
         purpose,
+      };
+      break;
+
+    case 'payment_contract_by_sbp':
+      recipient = {
+        type: 'payment_contract_by_sbp',
+        number: 1,
+        amount: dealAmount,
+        first_name: client.sbp_first_name!,
+        middle_name: client.sbp_middle_name || undefined,
+        last_name: client.sbp_last_name!,
+        phone_number: client.sbp_phone!,
+        bank_sbp_id: client.sbp_bank_id!,
+        purpose,
+        inn: client.inn || undefined,
       };
       break;
 
@@ -594,6 +655,9 @@ export function buildDealParamsForClient(
   }
 
   // Убираем undefined поля
+  if (!recipient) {
+    throw new Error('Шаблон выплаты не задан');
+  }
   const cleanRecipient: Record<string, unknown> = {};
   for (const key of Object.keys(recipient!)) {
     const val = (recipient as Record<string, unknown>)[key];
@@ -608,6 +672,17 @@ export function buildDealParamsForClient(
     payers,
     recipients: [cleanRecipient],
   };
+}
+
+export function resolveClientPayoutPurpose(
+  client: Client,
+  period: string,
+  fallbackTemplate: string
+): string {
+  const rawTemplate = client.payout_purpose && client.payout_purpose.trim()
+    ? client.payout_purpose
+    : fallbackTemplate;
+  return rawTemplate.replace('{period}', period);
 }
 
 // ============ ЗАПИСЬ ВЫПЛАТЫ КЛИЕНТУ ============
@@ -661,7 +736,8 @@ export function createClientPayout(
 export function calculateClientPayoutUnified(
   client_id: number,
   transactions: Array<{ id: string | number; machine_id: string | number; date: string; amount: number }>,
-  end_date?: string
+  end_date?: string,
+  start_date?: string
 ): ClientPayoutCalculation {
   const client = getClientById(client_id);
   if (!client) {
@@ -670,18 +746,21 @@ export function calculateClientPayoutUnified(
 
   const commissionPercent = client.commission_percent;
   if (commissionPercent === null || commissionPercent === undefined) {
-    return calculateClientPayout(client_id, transactions, end_date);
+    return calculateClientPayout(client_id, transactions, end_date, start_date);
   }
 
   const db = getDb();
-  const now = end_date || new Date().toISOString().split('T')[0];
+  const endDate = normalizeEndDateTime(end_date);
+  const requestedStart = start_date ? normalizeStartDateTime(start_date) : null;
+  const requestedStartTs = requestedStart ? requestedStart.getTime() : null;
+  const now = endDate.toISOString();
   const machines = getMachinesByClient(client_id);
 
   if (machines.length === 0) {
     return {
       client_id,
       client_name: client.name,
-      period_start: now,
+      period_start: requestedStart ? requestedStart.toISOString() : now,
       period_end: now,
       machines: [],
       total_sales: 0,
@@ -698,23 +777,26 @@ export function calculateClientPayoutUnified(
   `).get(client_id) as { period_end: string } | undefined;
 
   const machineResults: ClientPayoutCalculation['machines'] = [];
-  let periodStart = now;
+  let periodStart = requestedStart ? requestedStart.toISOString() : now;
+  let periodStartTs = requestedStartTs ?? endDate.getTime();
 
   for (const machine of machines) {
-    const assignmentDate = machine.assigned_at.split('T')[0];
-    const startDate = lastPayout
-      ? (assignmentDate > lastPayout.period_end ? assignmentDate : lastPayout.period_end)
-      : assignmentDate;
+    const assignmentTime = normalizeStartDateTime(machine.assigned_at).getTime();
+    const lastPayoutTime = lastPayout ? normalizeStartDateTime(lastPayout.period_end).getTime() : null;
+    const baseStartTime = requestedStartTs !== null ? requestedStartTs : assignmentTime;
+    const startTime = lastPayoutTime !== null ? Math.max(baseStartTime, lastPayoutTime) : baseStartTime;
 
-    if (startDate < periodStart) {
-      periodStart = startDate;
+    if (startTime < periodStartTs) {
+      periodStartTs = startTime;
+      periodStart = new Date(startTime).toISOString();
     }
 
     const machineTransactions = transactions.filter(t => {
       const transaction_term_id = String(t.machine_id);
-      const txDate = t.date.split('T')[0];
-      const machine_term_id = machine.terminal_id || machine.vendista_id;
-      return transaction_term_id === machine_term_id && txDate >= startDate && txDate <= now;
+      const txTime = new Date(t.date).getTime();
+      if (Number.isNaN(txTime)) return false;
+      const machineIds = [machine.vendista_id, machine.terminal_id].filter(Boolean).map(String);
+      return machineIds.includes(transaction_term_id) && txTime >= startTime && txTime <= endDate.getTime();
     });
 
     const sales_amount = machineTransactions.reduce((sum, t) => sum + t.amount, 0);

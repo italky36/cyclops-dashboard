@@ -11,6 +11,7 @@ import {
   resolveDocumentMimeType,
 } from '@/lib/cyclops-document-utils';
 import { logAction } from '@/lib/vending';
+import { parseClientIdParam } from '@/lib/client-slug';
 
 // POST /api/clients/[clientId]/document — загрузить документ
 export async function POST(
@@ -19,8 +20,8 @@ export async function POST(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 
@@ -93,8 +94,8 @@ export async function GET(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 
@@ -135,8 +136,8 @@ export async function DELETE(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 

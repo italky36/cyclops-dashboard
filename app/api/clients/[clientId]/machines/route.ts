@@ -6,6 +6,7 @@ import {
   unassignMachineFromClient,
 } from '@/lib/clients';
 import { getUnassignedMachines } from '@/lib/vending';
+import { parseClientIdParam } from '@/lib/client-slug';
 
 // GET /api/clients/[clientId]/machines — машины клиента + свободные
 export async function GET(
@@ -14,8 +15,8 @@ export async function GET(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 
@@ -43,27 +44,46 @@ export async function POST(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 
-    const body = await request.json();
-    const { machine_id, commission_percent } = body;
+    const client = getClientById(id);
+    if (!client) {
+      return NextResponse.json({ error: 'Клиент не найден' }, { status: 404 });
+    }
 
-    if (!machine_id || commission_percent === undefined) {
+    const body = await request.json();
+    const rawIds = Array.isArray(body.machine_ids)
+      ? body.machine_ids
+      : body.machine_id !== undefined && body.machine_id !== null
+        ? [body.machine_id]
+        : [];
+
+    const machineIds = rawIds
+      .map((value: unknown) => parseInt(String(value), 10))
+      .filter((value: number) => !Number.isNaN(value));
+
+    if (machineIds.length === 0) {
       return NextResponse.json(
-        { error: 'Обязательные поля: machine_id, commission_percent' },
+        { error: 'Передайте machine_id или machine_ids' },
         { status: 400 }
       );
     }
 
-    assignMachineToClient({
-      machine_id: parseInt(machine_id, 10),
-      client_id: id,
-      commission_percent: parseFloat(commission_percent),
-      created_by: body.user_id,
-    });
+    const commissionBase = typeof body.commission_percent === 'number'
+      ? body.commission_percent
+      : client.commission_percent ?? 0;
+
+    for (const machine_id of machineIds) {
+      assignMachineToClient({
+        machine_id,
+        client_id: id,
+        commission_percent: commissionBase,
+        created_by: body.user_id,
+      });
+    }
 
     const assigned = getMachinesByClient(id);
     return NextResponse.json({ success: true, assigned });
@@ -82,8 +102,8 @@ export async function DELETE(
 ) {
   try {
     const { clientId } = await params;
-    const id = parseInt(clientId, 10);
-    if (isNaN(id)) {
+    const id = parseClientIdParam(clientId);
+    if (!id) {
       return NextResponse.json({ error: 'Некорректный ID клиента' }, { status: 400 });
     }
 

@@ -568,7 +568,7 @@ export default function CreateDealPage() {
                           <input
                             type="text"
                             className="form-input"
-                            placeholder="40702810..."
+                            placeholder="40702810000000000001"
                             maxLength={20}
                             value={recipient.account || ''}
                             onChange={(e) => updateRecipient(recipient.id, { account: e.target.value.replace(/\D/g, '').slice(0, 20) })}
