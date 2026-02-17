@@ -1694,8 +1694,8 @@ export default function ClientDetailPage() {
             <span className="step-label">Выбор периода</span>
           </div>
           <div className="stepper-line" />
-          <div className={`stepper-step ${payoutStep >= 2 ? 'active' : ''} ${payoutStep > 2 ? 'completed' : ''}`}>
-            <div className="step-circle">{payoutStep > 2 ? '\u2713' : '2'}</div>
+          <div className={`stepper-step ${payoutStep >= 2 ? 'active completed' : ''}`}>
+            <div className="step-circle">{payoutStep >= 2 ? '\u2713' : '2'}</div>
             <span className="step-label">Расчёт</span>
           </div>
           <div className="stepper-line" />
