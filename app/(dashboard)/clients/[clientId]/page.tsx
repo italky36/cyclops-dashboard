@@ -879,6 +879,28 @@ export default function ClientDetailPage() {
 
   const isTemplateMissing = client.payout_type === 'none';
 
+  const payoutTypeClass = {
+    payment_contract: 'payout-bank',
+    payment_contract_by_sbp: 'payout-sbp',
+    payment_contract_by_sbp_v2: 'payout-sbp',
+    payment_contract_to_card: 'payout-card',
+    none: 'payout-none',
+  }[client.payout_type] || 'payout-none';
+
+  const payoutTypeIcon = {
+    payment_contract: '\u{1F3E6}',
+    payment_contract_by_sbp: '\u{1F4F1}',
+    payment_contract_by_sbp_v2: '\u{1F4F1}',
+    payment_contract_to_card: '\u{1F4B3}',
+    none: '',
+  }[client.payout_type] || '';
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+  };
+
+  const payoutStep = payoutResult?.success ? 3 : calculation ? 2 : 1;
+
   return (
     <div className="page-container">
       {/* Header */}
@@ -904,6 +926,47 @@ export default function ClientDetailPage() {
         </button>
       </div>
 
+      {/* Summary Metrics */}
+      <div className="metrics-strip">
+        <div className="metric-item">
+          <span className="metric-label">Автоматов</span>
+          <span className="metric-value">{machines.length}</span>
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">Комиссия</span>
+          <span className="metric-value">
+            {client.commission_percent !== null ? `${client.commission_percent}%` : '\u2014'}
+          </span>
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">Последняя выплата</span>
+          <span className="metric-value">
+            {payoutHistory.length > 0
+              ? `${payoutHistory[0].payout_amount.toFixed(0)} \u20BD`
+              : '\u2014'}
+          </span>
+          {payoutHistory.length > 0 && (
+            <span className="metric-sub">
+              {new Date(payoutHistory[0].created_at).toLocaleDateString('ru-RU')}
+            </span>
+          )}
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">Следующая выплата</span>
+          <span className="metric-value">
+            {client.next_payout_at
+              ? new Date(client.next_payout_at).toLocaleDateString('ru-RU')
+              : '\u2014'}
+          </span>
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">Автовыплаты</span>
+          <span className={`metric-value metric-status ${client.auto_payout_enabled ? 'on' : 'off'}`}>
+            {client.auto_payout_enabled ? 'Вкл' : 'Выкл'}
+          </span>
+        </div>
+      </div>
+
       {/* Info Cards */}
       <div className="cards-grid">
         <div className="info-card">
@@ -918,21 +981,21 @@ export default function ClientDetailPage() {
           </div>
         </div>
 
-        <div className="info-card">
-          <h3>Реквизиты для выплат</h3>
+        <div className={`info-card info-card-requisites ${payoutTypeClass}`}>
+          <h3>{payoutTypeIcon && <span className="requisites-icon">{payoutTypeIcon}</span>}Реквизиты для выплат</h3>
           <div className="info-rows">
             {client.payout_type === 'payment_contract' && (
               <>
-                <div className="info-row"><span>Счёт:</span> <code>{client.bank_account}</code></div>
-                <div className="info-row"><span>БИК:</span> <code>{client.bank_code}</code></div>
-                <div className="info-row"><span>ИНН:</span> <code>{client.inn}</code></div>
+                <div className="info-row"><span>Счёт:</span> <code>{client.bank_account}</code><button className="copy-btn" onClick={() => handleCopy(client.bank_account || '')} title="Копировать"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+                <div className="info-row"><span>БИК:</span> <code>{client.bank_code}</code><button className="copy-btn" onClick={() => handleCopy(client.bank_code || '')} title="Копировать"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+                <div className="info-row"><span>ИНН:</span> <code>{client.inn}</code><button className="copy-btn" onClick={() => handleCopy(client.inn || '')} title="Копировать"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
                 {client.kpp && <div className="info-row"><span>КПП:</span> <code>{client.kpp}</code></div>}
                 {client.recipient_name && <div className="info-row"><span>Получатель:</span> {client.recipient_name}</div>}
               </>
             )}
             {(client.payout_type === 'payment_contract_by_sbp' || client.payout_type === 'payment_contract_by_sbp_v2') && (
               <>
-                <div className="info-row"><span>Телефон:</span> <code>{client.sbp_phone}</code></div>
+                <div className="info-row"><span>Телефон:</span> <code>{client.sbp_phone}</code><button className="copy-btn" onClick={() => handleCopy(client.sbp_phone || '')} title="Копировать"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
                 <div className="info-row"><span>Банк СБП:</span> {client.sbp_bank_id}</div>
                 <div className="info-row"><span>ФИО:</span> {client.sbp_last_name} {client.sbp_first_name} {client.sbp_middle_name || ''}</div>
               </>
@@ -1560,6 +1623,28 @@ export default function ClientDetailPage() {
 
         {machines.length === 0 ? (
           <div className="empty-message">Нет привязанных автоматов</div>
+        ) : machines.length <= 5 ? (
+          <div className="machine-chips">
+            {machines.map((m) => (
+              <div key={m.assignment_id} className="machine-chip">
+                <div className="chip-content">
+                  <span className="chip-name">{m.name || m.vendista_id}</span>
+                  {m.address && (
+                    <span className="chip-address">
+                      {m.address.length > 30 ? m.address.slice(0, 30) + '...' : m.address}
+                    </span>
+                  )}
+                </div>
+                <button
+                  className="chip-remove"
+                  onClick={() => handleUnassignMachine(m.assignment_id)}
+                  title="Отвязать"
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="table-container">
             <table className="data-table">
@@ -1601,6 +1686,24 @@ export default function ClientDetailPage() {
           <h2>Выплата</h2>
         </div>
 
+        {/* Step Indicator */}
+        <div className="stepper">
+          <div className={`stepper-step ${payoutStep >= 1 ? 'active' : ''} ${payoutStep > 1 ? 'completed' : ''}`}>
+            <div className="step-circle">{payoutStep > 1 ? '\u2713' : '1'}</div>
+            <span className="step-label">Выбор периода</span>
+          </div>
+          <div className="stepper-line" />
+          <div className={`stepper-step ${payoutStep >= 2 ? 'active' : ''} ${payoutStep > 2 ? 'completed' : ''}`}>
+            <div className="step-circle">{payoutStep > 2 ? '\u2713' : '2'}</div>
+            <span className="step-label">Расчёт</span>
+          </div>
+          <div className="stepper-line" />
+          <div className={`stepper-step ${payoutStep >= 3 ? 'active' : ''}`}>
+            <div className="step-circle">3</div>
+            <span className="step-label">Подтверждение</span>
+          </div>
+        </div>
+
         <div className="payout-controls">
           <div className="form-group" style={{ flex: 1, maxWidth: 280 }}>
             <label>Дата окончания периода</label>
@@ -1622,19 +1725,6 @@ export default function ClientDetailPage() {
             </button>
           </div>
         </div>
-
-        {payoutResult && (
-          <div className={`result-message ${payoutResult.success ? 'success' : 'error'}`}>
-            {payoutResult.message}
-            {payoutResult.deal_id && (
-              <div>
-                <Link href={`/deals/${payoutResult.deal_id}`} className="text-link">
-                  Открыть сделку
-                </Link>
-              </div>
-            )}
-          </div>
-        )}
 
         {calculation && (
           <div className="calculation-result">
@@ -1702,6 +1792,19 @@ export default function ClientDetailPage() {
                     ? 'Шаблон выплаты не задан. Добавьте реквизиты клиента.'
                     : `Будет создана и исполнена сделка в Cyclops (${PAYOUT_TYPE_LABELS[client.payout_type]})`}
                 </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {payoutResult && (
+          <div className={`result-message ${payoutResult.success ? 'success' : 'error'}`} style={{ marginTop: 16 }}>
+            {payoutResult.message}
+            {payoutResult.deal_id && (
+              <div>
+                <Link href={`/deals/${payoutResult.deal_id}`} className="text-link">
+                  Открыть сделку
+                </Link>
               </div>
             )}
           </div>
@@ -1778,10 +1881,16 @@ export default function ClientDetailPage() {
                   const dealStatus = payout.cyclops_deal_id
                     ? dealStatuses[payout.cyclops_deal_id] || '—'
                     : '—';
+                  const statusBorderColor = {
+                    completed: 'var(--color-success)',
+                    pending: 'var(--color-warning)',
+                    processing: 'var(--color-warning)',
+                    failed: 'var(--color-error)',
+                  }[payout.status] || 'transparent';
 
                   return (
                     <tr key={payout.id}>
-                      <td>
+                      <td style={{ borderLeft: `3px solid ${statusBorderColor}` }}>
                         {formatPeriodValue(payout.period_start)} — {formatPeriodValue(payout.period_end)}
                       </td>
                       <td>{payout.payout_amount.toFixed(2)} руб.</td>
@@ -1859,6 +1968,44 @@ export default function ClientDetailPage() {
         .badge-muted { background: var(--bg-secondary); color: var(--text-secondary); }
         .badge-info { background: #dbeafe; color: #1e40af; }
         .badge-danger { background: #fee2e2; color: #b91c1c; }
+        .metrics-strip {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 12px;
+          margin-bottom: 24px;
+        }
+        .metric-item {
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          padding: 14px 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .metric-label {
+          font-size: 12px;
+          color: var(--text-tertiary);
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+        .metric-value {
+          font-size: 20px;
+          font-weight: 700;
+          color: var(--text-primary);
+          letter-spacing: -0.5px;
+        }
+        .metric-sub {
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+        .metric-status.on {
+          color: var(--color-success);
+        }
+        .metric-status.off {
+          color: var(--text-tertiary);
+        }
         .cards-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -1870,6 +2017,26 @@ export default function ClientDetailPage() {
           border: 1px solid var(--border-color);
           border-radius: 12px;
           padding: 20px;
+        }
+        .info-card-requisites {
+          border-left: 4px solid transparent;
+        }
+        .info-card-requisites.payout-bank {
+          border-left-color: #3b82f6;
+        }
+        .info-card-requisites.payout-sbp {
+          border-left-color: var(--color-success);
+        }
+        .info-card-requisites.payout-card {
+          border-left-color: #8b5cf6;
+        }
+        .info-card-requisites.payout-none {
+          border-left-color: var(--text-tertiary);
+          border-left-style: dashed;
+        }
+        .requisites-icon {
+          margin-right: 6px;
+          font-size: 16px;
         }
         .info-card h3 {
           font-size: 14px;
@@ -1885,11 +2052,34 @@ export default function ClientDetailPage() {
           gap: 8px;
         }
         .info-row {
+          display: flex;
+          align-items: center;
+          gap: 4px;
           font-size: 14px;
           color: var(--text-primary);
         }
         .info-row span {
           color: var(--text-secondary);
+        }
+        .copy-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 24px;
+          height: 24px;
+          padding: 0;
+          margin-left: 4px;
+          border: none;
+          background: transparent;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          border-radius: 4px;
+          transition: all 0.15s ease;
+          flex-shrink: 0;
+        }
+        .copy-btn:hover {
+          background: var(--bg-tertiary);
+          color: var(--text-primary);
         }
         .info-row code {
           font-family: var(--font-mono);
@@ -1980,6 +2170,58 @@ export default function ClientDetailPage() {
           font-size: 12px;
           color: var(--text-secondary);
         }
+        .machine-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .machine-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 20px;
+          font-size: 13px;
+          transition: box-shadow 0.15s ease;
+        }
+        .machine-chip:hover {
+          box-shadow: var(--shadow-sm);
+        }
+        .chip-content {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+        }
+        .chip-name {
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        .chip-address {
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+        .chip-remove {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 22px;
+          height: 22px;
+          padding: 0;
+          border: none;
+          background: transparent;
+          color: var(--text-tertiary);
+          font-size: 16px;
+          cursor: pointer;
+          border-radius: 50%;
+          transition: all 0.15s ease;
+          flex-shrink: 0;
+        }
+        .chip-remove:hover {
+          background: var(--color-error-bg);
+          color: var(--color-error);
+        }
         .empty-message {
           text-align: center;
           padding: 24px;
@@ -2011,6 +2253,59 @@ export default function ClientDetailPage() {
           border-bottom: 1px solid var(--border-color);
         }
         .data-table tr:last-child td { border-bottom: none; }
+        .stepper {
+          display: flex;
+          align-items: center;
+          margin-bottom: 24px;
+        }
+        .stepper-step {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .step-circle {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 13px;
+          font-weight: 600;
+          border: 2px solid var(--border-color);
+          color: var(--text-tertiary);
+          background: var(--bg-primary);
+          transition: all 0.2s ease;
+        }
+        .stepper-step.active .step-circle {
+          border-color: var(--accent-color);
+          color: var(--accent-color);
+          background: var(--accent-bg);
+        }
+        .stepper-step.completed .step-circle {
+          border-color: var(--color-success);
+          background: var(--color-success);
+          color: white;
+        }
+        .step-label {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--text-tertiary);
+        }
+        .stepper-step.active .step-label {
+          color: var(--text-primary);
+        }
+        .stepper-step.completed .step-label {
+          color: var(--color-success);
+        }
+        .stepper-line {
+          flex: 1;
+          height: 2px;
+          background: var(--border-color);
+          margin: 0 12px;
+          min-width: 20px;
+        }
         .payout-controls {
           display: flex;
           gap: 16px;
@@ -2400,10 +2695,20 @@ export default function ClientDetailPage() {
           font-size: 12px;
           color: var(--text-secondary);
         }
+        @media (max-width: 1100px) {
+          .metrics-strip { grid-template-columns: repeat(3, 1fr); }
+        }
         @media (max-width: 767px) {
           .page-container { padding: 16px; }
+          .metrics-strip { grid-template-columns: repeat(2, 1fr); }
+          .metric-value { font-size: 18px; }
           .cards-grid { grid-template-columns: 1fr; }
           .calc-summary { grid-template-columns: 1fr 1fr; }
+          .step-label { display: none; }
+          .stepper-line { margin: 0 8px; }
+          .stepper { margin-bottom: 16px; }
+          .machine-chips { flex-direction: column; }
+          .machine-chip { border-radius: 12px; }
           .payout-controls {
             flex-direction: column;
             align-items: stretch;
