@@ -48,7 +48,7 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
       setError(null);
 
       try {
-        const response = await fetch(`/api/analytics?days=${days}`);
+        const response = await fetch(`/api/analytics?days=${days}&layer=${layer}`);
         const result = await response.json();
 
         console.log('AnalyticsChart - API response:', result);
@@ -123,9 +123,6 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
     return null;
   };
 
-  // Проверяем, есть ли хоть какие-то данные
-  const hasData = data.some(d => d.payments > 0 || d.deals > 0);
-
   if (error && data.length === 0) {
     return (
       <div className="chart-container error">
@@ -159,57 +156,6 @@ export function AnalyticsChart({ layer, days = 30 }: AnalyticsChartProps) {
           }
 
           .error-content p {
-            font-size: 14px;
-            margin: 0;
-          }
-        `}</style>
-      </div>
-    );
-  }
-
-  // Если данных нет, показываем empty state
-  if (!hasData && data.length > 0 && !isLoading) {
-    return (
-      <div className="chart-container empty">
-        <div className="empty-content">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <line x1="18" y1="20" x2="18" y2="10" />
-            <line x1="12" y1="20" x2="12" y2="4" />
-            <line x1="6" y1="20" x2="6" y2="14" />
-          </svg>
-          <h3>Нет данных за выбранный период</h3>
-          <p>Данные о платежах и сделках появятся здесь после их создания</p>
-        </div>
-        <style jsx>{`
-          .chart-container.empty {
-            height: 200px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-
-          .empty-content {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 16px;
-            color: var(--text-secondary);
-            text-align: center;
-            max-width: 400px;
-          }
-
-          .empty-content svg {
-            opacity: 0.3;
-          }
-
-          .empty-content h3 {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin: 0;
-          }
-
-          .empty-content p {
             font-size: 14px;
             margin: 0;
           }
