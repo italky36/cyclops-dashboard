@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCyclopsClient, getLayerFromRequest } from '@/lib/cyclops-helpers';
 import { ANALYTICS_RETENTION_DAYS, buildAnalyticsMap, cleanupAnalyticsDaily, getAnalyticsDaily, isAnalyticsRowFresh, upsertAnalyticsDaily } from '@/lib/analytics-cache';
+import { getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -222,11 +223,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Дополняем данные локальными выплатами клиентам (на случай если всё из кеша)
+    const db2 = getDb();
+    const allLocalPayouts = db2.prepare(`
+      SELECT DATE(created_at) as date, SUM(payout_amount) as total
+      FROM beneficiary_payouts
+      WHERE DATE(created_at) BETWEEN ? AND ?
+        AND status IN ('pending', 'executed', 'completed')
+      GROUP BY DATE(created_at)
+    `).all(startDate, endDate) as Array<{ date: string; total: number }>;
+    const localPayoutsMap = new Map(allLocalPayouts.map(r => [r.date, r.total]));
+
     // Преобразуем в массив для графика
     const data: DataPoint[] = dates.map(date => ({
       date,
       payments: cachedMap.get(date)?.payments_sum || 0,
-      deals: cachedMap.get(date)?.deals_sum || 0,
+      deals: (cachedMap.get(date)?.deals_sum || 0) + (localPayoutsMap.get(date) || 0),
     }));
 
     // Логируем итоговые данные
