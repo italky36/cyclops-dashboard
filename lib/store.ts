@@ -132,6 +132,7 @@ export const useAppStore = create<AppState>()(
         autoPaymentRules: state.autoPaymentRules,
         favoriteBeneficiaries: state.favoriteBeneficiaries,
         paymentOverrides: state.paymentOverrides,
+        recentActions: state.recentActions,
       }),
     }
   )
