@@ -171,6 +171,63 @@ function ensureSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_audit_log_action
       ON audit_log (action);
 
+    -- ============ КЛИЕНТЫ ============
+
+    CREATE TABLE IF NOT EXISTS clients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      contact_name TEXT,
+      phone TEXT,
+      email TEXT,
+
+      -- Тип выплаты: payment_contract | payment_contract_by_sbp_v2 | payment_contract_to_card
+      payout_type TEXT NOT NULL DEFAULT 'payment_contract',
+
+      -- Реквизиты для payment_contract (банковский перевод)
+      bank_account TEXT,
+      bank_code TEXT,
+      bank_name TEXT,
+      inn TEXT,
+      kpp TEXT,
+      recipient_name TEXT,
+      payout_purpose TEXT,
+
+      -- Реквизиты для СБП
+      sbp_phone TEXT,
+      sbp_bank_id TEXT,
+      sbp_first_name TEXT,
+      sbp_middle_name TEXT,
+      sbp_last_name TEXT,
+
+      -- Реквизиты для карты
+      card_number_encrypted TEXT,
+      card_first_name TEXT,
+      card_middle_name TEXT,
+      card_last_name TEXT,
+
+      -- Связь с Cyclops бенефициаром (опционально)
+      beneficiary_id TEXT,
+
+      is_active INTEGER NOT NULL DEFAULT 1,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_clients_name ON clients (name);
+    CREATE INDEX IF NOT EXISTS idx_clients_inn ON clients (inn);
+    CREATE INDEX IF NOT EXISTS idx_clients_beneficiary ON clients (beneficiary_id);
+    CREATE INDEX IF NOT EXISTS idx_clients_active ON clients (is_active);
+
+    -- ============ НАСТРОЙКИ ПЛАТФОРМЫ ============
+
+    CREATE TABLE IF NOT EXISTS platform_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      payout_virtual_account TEXT,
+      payout_purpose_template TEXT DEFAULT 'Выплата по договору за период {period}',
+      updated_at TEXT NOT NULL
+    );
+
     -- ============ TENDER-HELPERS (PRE ONLY) ============
 
     CREATE TABLE IF NOT EXISTS tender_helpers_settings (
@@ -260,5 +317,67 @@ export function getDb(): Database.Database {
 
   db = new Database(dbPath);
   ensureSchema(db);
+  runMigrations(db);
   return db;
+}
+
+/**
+ * Миграции: добавление столбцов к существующим таблицам
+ */
+function runMigrations(database: Database.Database) {
+  // Добавляем client_id к machine_assignments (если ещё нет)
+  const maColumns = database.pragma('table_info(machine_assignments)') as Array<{ name: string }>;
+  if (!maColumns.some(c => c.name === 'client_id')) {
+    database.exec(`ALTER TABLE machine_assignments ADD COLUMN client_id INTEGER REFERENCES clients(id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_machine_assignments_client ON machine_assignments (client_id)`);
+  }
+
+  // Добавляем client_id к beneficiary_payouts (если ещё нет)
+  const bpColumns = database.pragma('table_info(beneficiary_payouts)') as Array<{ name: string }>;
+  if (!bpColumns.some(c => c.name === 'client_id')) {
+    database.exec(`ALTER TABLE beneficiary_payouts ADD COLUMN client_id INTEGER REFERENCES clients(id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_beneficiary_payouts_client ON beneficiary_payouts (client_id)`);
+  }
+
+  // Добавляем is_auto к beneficiary_payouts
+  if (!bpColumns.some(c => c.name === 'is_auto')) {
+    database.exec(`ALTER TABLE beneficiary_payouts ADD COLUMN is_auto INTEGER DEFAULT 0`);
+  }
+
+  // Добавляем поля автовыплат к clients
+  const clientColumns = database.pragma('table_info(clients)') as Array<{ name: string }>;
+  const clientColumnNames = clientColumns.map(c => c.name);
+
+  if (!clientColumnNames.includes('commission_percent')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN commission_percent REAL DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('payout_frequency')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_frequency TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('payout_purpose')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_purpose TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('payout_exclude_days')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_exclude_days INTEGER DEFAULT 0`);
+  }
+  if (!clientColumnNames.includes('auto_payout_enabled')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN auto_payout_enabled INTEGER DEFAULT 0`);
+  }
+  if (!clientColumnNames.includes('next_payout_at')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN next_payout_at TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('document_filename')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN document_filename TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('document_mime_type')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN document_mime_type TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('document_uploaded_at')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN document_uploaded_at TEXT DEFAULT NULL`);
+  }
+  if (!clientColumnNames.includes('payout_virtual_account')) {
+    database.exec(`ALTER TABLE clients ADD COLUMN payout_virtual_account TEXT DEFAULT NULL`);
+  }
+
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_clients_auto_payout ON clients (auto_payout_enabled, next_payout_at)`);
 }

@@ -6,6 +6,7 @@ type VirtualAccountRecord = {
   virtual_account?: string;
   balance?: number;
   type?: string;
+  beneficiary_id?: string;
 };
 
 const mapVirtualAccountRecord = (item: unknown): VirtualAccountRecord | null => {
@@ -16,6 +17,7 @@ const mapVirtualAccountRecord = (item: unknown): VirtualAccountRecord | null => 
     balance?: number;
     cash?: number;
     type?: string;
+    beneficiary_id?: string;
   };
   const id = record.id || record.virtual_account;
   if (!id) return null;
@@ -24,6 +26,7 @@ const mapVirtualAccountRecord = (item: unknown): VirtualAccountRecord | null => 
     virtual_account: record.virtual_account,
     balance: typeof record.balance === 'number' ? record.balance : record.cash,
     type: record.type,
+    beneficiary_id: record.beneficiary_id,
   };
 };
 
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
               virtual_account: accountId,
             });
             if (detailResult.error) return null;
-            const detail = (detailResult.result as { virtual_account?: { code?: string; cash?: number; type?: string } } | undefined)
+            const detail = (detailResult.result as { virtual_account?: { code?: string; cash?: number; type?: string; beneficiary_id?: string } } | undefined)
               ?.virtual_account;
             if (!detail) return null;
             return {
@@ -72,6 +75,7 @@ export async function GET(request: NextRequest) {
               virtual_account: accountId,
               balance: typeof detail.cash === 'number' ? detail.cash : undefined,
               type: detail.type,
+              beneficiary_id: detail.beneficiary_id,
             } satisfies VirtualAccountRecord;
           } catch {
             return null;

@@ -121,6 +121,7 @@ export default function MachinesPage() {
       const query = searchQuery.toLowerCase();
       return (
         m.name?.toLowerCase().includes(query) ||
+        m.terminal_id?.toLowerCase().includes(query) ||
         m.vendista_id.toLowerCase().includes(query) ||
         m.address?.toLowerCase().includes(query) ||
         m.model?.toLowerCase().includes(query)
@@ -271,13 +272,12 @@ export default function MachinesPage() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Terminal ID</th>
                 <th>Название</th>
                 <th>Модель</th>
                 <th>Адрес</th>
                 <th>Статус</th>
                 <th>Бенефициар</th>
-                <th>Комиссия</th>
                 <th></th>
               </tr>
             </thead>
@@ -285,7 +285,7 @@ export default function MachinesPage() {
               {filteredMachines.map((machine) => (
                 <tr key={machine.id}>
                   <td>
-                    <span className="mono-text">{machine.vendista_id}</span>
+                    <span className="mono-text">{machine.terminal_id || '—'}</span>
                   </td>
                   <td>
                     <div className="cell-main">{machine.name || '—'}</div>
@@ -312,13 +312,6 @@ export default function MachinesPage() {
                       </Link>
                     ) : (
                       <span className="text-tertiary">Не привязан</span>
-                    )}
-                  </td>
-                  <td>
-                    {machine.assignment ? (
-                      <span>{machine.assignment.commission_percent}%</span>
-                    ) : (
-                      '—'
                     )}
                   </td>
                   <td>

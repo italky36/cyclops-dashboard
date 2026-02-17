@@ -15,6 +15,18 @@ import {
   logAction,
 } from '@/lib/vending';
 
+const normalizeDateTime = (value?: string, endOfDay = false): string => {
+  if (!value) return new Date().toISOString();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}${endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z'}`).toISOString();
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toISOString();
+  }
+  return parsed.toISOString();
+};
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
@@ -106,22 +118,26 @@ export async function POST(request: NextRequest) {
 
       if (isVendistaConfigured()) {
         const client = createVendistaClient();
-        // Используем terminal_id для запроса транзакций
         const terminal_ids = machines
           .map(m => m.terminal_id)
-          .filter((id): id is string => id !== null && id !== undefined);
+          .filter((id) => id !== null && id !== undefined);
+        const machine_ids = machines
+          .filter(m => !m.terminal_id)
+          .map(m => m.vendista_id)
+          .filter((id) => id !== null && id !== undefined);
 
-        if (terminal_ids.length === 0) {
-          console.warn('[Payouts] No terminal_ids found for machines');
+        if (machine_ids.length === 0 && terminal_ids.length === 0) {
+          console.warn('[Payouts] No machine_ids found for machines');
         } else {
           // Определяем период для запроса - берем широкий диапазон
-          const endDate = end_date || new Date().toISOString().split('T')[0];
+          const endDate = normalizeDateTime(end_date, true);
           const startDate = machines.reduce((earliest, m) => {
-            const assignedDate = m.assignment?.assigned_at.split('T')[0] || endDate;
+            const assignedDate = normalizeDateTime(m.assignment?.assigned_at || endDate);
             return assignedDate < earliest ? assignedDate : earliest;
           }, endDate);
 
           transactions = await client.fetchTransactionsForMachines({
+            machine_ids,
             terminal_ids,
             startDate,
             endDate,
@@ -129,7 +145,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const calculation = calculatePayout(beneficiary_id, transactions, end_date);
+      const calculation = calculatePayout(beneficiary_id, transactions, normalizeDateTime(end_date, true));
 
       return NextResponse.json({
         calculation,
@@ -157,16 +173,21 @@ export async function POST(request: NextRequest) {
         const client = createVendistaClient();
         const terminal_ids = machines
           .map(m => m.terminal_id)
-          .filter((id): id is string => id !== null && id !== undefined);
+          .filter((id) => id !== null && id !== undefined);
+        const machine_ids = machines
+          .filter(m => !m.terminal_id)
+          .map(m => m.vendista_id)
+          .filter((id) => id !== null && id !== undefined);
 
-        if (terminal_ids.length > 0) {
-          const endDate = end_date || new Date().toISOString().split('T')[0];
+        if (machine_ids.length > 0 || terminal_ids.length > 0) {
+          const endDate = normalizeDateTime(end_date, true);
           const startDate = machines.reduce((earliest, m) => {
-            const assignedDate = m.assignment?.assigned_at.split('T')[0] || endDate;
+            const assignedDate = normalizeDateTime(m.assignment?.assigned_at || endDate);
             return assignedDate < earliest ? assignedDate : earliest;
           }, endDate);
 
           transactions = await client.fetchTransactionsForMachines({
+            machine_ids,
             terminal_ids,
             startDate,
             endDate,
@@ -174,7 +195,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const calculation = calculatePayout(beneficiary_id, transactions, end_date);
+      const calculation = calculatePayout(beneficiary_id, transactions, normalizeDateTime(end_date, true));
 
       if (calculation.payout_amount <= 0) {
         return NextResponse.json({
@@ -256,23 +277,23 @@ export async function POST(request: NextRequest) {
 
           if (isVendistaConfigured()) {
             const client = createVendistaClient();
-            const terminal_ids = machines
-              .map(m => m.terminal_id)
-              .filter((id): id is string => id !== null && id !== undefined);
+              const machine_ids = machines
+                .map(m => m.vendista_id)
+                .filter((id) => id !== null && id !== undefined);
 
-            if (terminal_ids.length > 0) {
-              const endDate = new Date().toISOString().split('T')[0];
-              const startDate = machines.reduce((earliest, m) => {
-                const assignedDate = m.assignment?.assigned_at.split('T')[0] || endDate;
-                return assignedDate < earliest ? assignedDate : earliest;
-              }, endDate);
+              if (machine_ids.length > 0) {
+                const endDate = normalizeDateTime(undefined, true);
+                const startDate = machines.reduce((earliest, m) => {
+                  const assignedDate = normalizeDateTime(m.assignment?.assigned_at || endDate);
+                  return assignedDate < earliest ? assignedDate : earliest;
+                }, endDate);
 
-              transactions = await client.fetchTransactionsForMachines({
-                terminal_ids,
-                startDate,
-                endDate,
-              });
-            }
+                transactions = await client.fetchTransactionsForMachines({
+                  machine_ids,
+                  startDate,
+                  endDate,
+                });
+              }
           }
 
           const calculation = calculatePayout(beneficiary_id, transactions);

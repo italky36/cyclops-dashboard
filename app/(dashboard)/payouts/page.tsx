@@ -56,12 +56,66 @@ interface PayoutSchedule {
   updated_at: string;
 }
 
+interface ClientItem {
+  id: number;
+  name: string;
+  inn: string | null;
+  payout_type: string;
+  machine_count: number;
+}
+
+interface ClientPayoutCalculation {
+  client_id: number;
+  client_name: string;
+  period_start: string;
+  period_end: string;
+  machines: Array<{
+    machine_id: number;
+    vendista_id: string;
+    machine_name: string | null;
+    sales_amount: number;
+    commission_percent: number;
+    commission_amount: number;
+    net_amount: number;
+  }>;
+  total_sales: number;
+  total_commission: number;
+  payout_amount: number;
+}
+
+interface ClientMachineItem {
+  beneficiary_id?: string | null;
+}
+
+interface VirtualAccountOption {
+  id: string;
+  balance?: number;
+  beneficiary_id?: string;
+}
+
+const PAYOUT_TYPE_LABELS: Record<string, string> = {
+  payment_contract: 'Банк. перевод',
+  payment_contract_by_sbp: 'СБП',
+  payment_contract_by_sbp_v2: 'СБП (v2)',
+  payment_contract_to_card: 'Карта',
+  none: 'Без шаблона',
+};
+
+const getDefaultStartDate = (value: string) => {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  parsed.setMonth(parsed.getMonth() - 1);
+  return parsed.toISOString().split('T')[0];
+};
+
 export default function PayoutsPage() {
   const layer = useAppStore((s) => s.layer);
   const addRecentAction = useAppStore((s) => s.addRecentAction);
   const { listBeneficiaries } = useCyclops({ layer });
 
   const [activeTab, setActiveTab] = useState<'manual' | 'history' | 'schedule'>('manual');
+  const [payoutMode, setPayoutMode] = useState<'client' | 'beneficiary'>('client');
 
   // Manual payout state
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
@@ -71,6 +125,16 @@ export default function PayoutsPage() {
   const [calculation, setCalculation] = useState<PayoutCalculation | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [virtualAccounts, setVirtualAccounts] = useState<VirtualAccountOption[]>([]);
+  const [selectedVirtualAccount, setSelectedVirtualAccount] = useState('');
+
+  // Client payout state
+  const [clients, setClients] = useState<ClientItem[]>([]);
+  const [selectedClient, setSelectedClient] = useState<string>('');
+  const [clientCalculation, setClientCalculation] = useState<ClientPayoutCalculation | null>(null);
+  const [clientPayoutResult, setClientPayoutResult] = useState<{ success: boolean; message: string; deal_id?: string } | null>(null);
+  const [clientBeneficiaryIds, setClientBeneficiaryIds] = useState<string[]>([]);
+  const [selectedClientVirtualAccount, setSelectedClientVirtualAccount] = useState('');
 
   // History state
   const [payouts, setPayouts] = useState<Payout[]>([]);
@@ -97,7 +161,7 @@ export default function PayoutsPage() {
     };
   }, []);
 
-  const fetchWithTimeout = async (input: RequestInfo, init?: RequestInit) => {
+  const fetchWithTimeout = useCallback(async (input: RequestInfo, init?: RequestInit) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
     try {
@@ -106,7 +170,7 @@ export default function PayoutsPage() {
     } finally {
       clearTimeout(timeoutId);
     }
-  };
+  }, []);
 
   const loadBeneficiaries = useCallback(async () => {
     if (inFlight.current.has('beneficiaries')) return;
@@ -141,6 +205,46 @@ export default function PayoutsPage() {
     }
   }, [listBeneficiaries]);
 
+  const loadClients = useCallback(async () => {
+    if (inFlight.current.has('clients')) return;
+    inFlight.current.add('clients');
+    try {
+      const response = await fetchWithTimeout('/api/clients?is_active=true');
+      const data = await response.json();
+      if (data.clients && isMounted.current) {
+        setClients(data.clients.filter((c: ClientItem) => c.machine_count > 0));
+      }
+    } catch (error) {
+      console.error('Failed to load clients:', error);
+    } finally {
+      inFlight.current.delete('clients');
+    }
+  }, [fetchWithTimeout]);
+
+  const loadClientMachines = useCallback(async (clientId: string) => {
+    if (!clientId) {
+      setClientBeneficiaryIds([]);
+      return;
+    }
+    const key = `client_machines_${clientId}`;
+    if (inFlight.current.has(key)) return;
+    inFlight.current.add(key);
+    try {
+      const response = await fetchWithTimeout(`/api/clients/${clientId}/machines`);
+      const data = await response.json();
+      const assigned = Array.isArray(data?.assigned) ? (data.assigned as ClientMachineItem[]) : [];
+      const beneficiaryIds = assigned
+        .map((m) => (m.beneficiary_id ? String(m.beneficiary_id) : ''))
+        .filter((id) => Boolean(id));
+      setClientBeneficiaryIds(Array.from(new Set(beneficiaryIds)));
+    } catch (error) {
+      console.error('Failed to load client machines:', error);
+      setClientBeneficiaryIds([]);
+    } finally {
+      inFlight.current.delete(key);
+    }
+  }, [fetchWithTimeout]);
+
   const loadBeneficiaryIds = useCallback(async () => {
     if (inFlight.current.has('beneficiary_ids')) return;
     inFlight.current.add('beneficiary_ids');
@@ -155,7 +259,34 @@ export default function PayoutsPage() {
     } finally {
       inFlight.current.delete('beneficiary_ids');
     }
-  }, []);
+  }, [fetchWithTimeout]);
+
+  const loadVirtualAccounts = useCallback(async () => {
+    if (inFlight.current.has('virtual_accounts')) return;
+    inFlight.current.add('virtual_accounts');
+    try {
+      const response = await fetchWithTimeout('/api/virtual-accounts?type=standard');
+      const data = await response.json();
+      const accounts = data?.virtual_accounts || data?.result?.virtual_accounts || [];
+      if (Array.isArray(accounts) && isMounted.current) {
+        setVirtualAccounts(accounts.map((acc: unknown) => {
+          if (typeof acc === 'string') {
+            return { id: acc };
+          }
+          const accObj = acc as { id?: string; virtual_account?: string; code?: string; balance?: number; cash?: number; beneficiary_id?: string };
+          return {
+            id: accObj.id || accObj.virtual_account || accObj.code || '',
+            balance: typeof accObj.balance === 'number' ? accObj.balance : accObj.cash,
+            beneficiary_id: accObj.beneficiary_id,
+          } as VirtualAccountOption;
+        }).filter((acc: VirtualAccountOption) => acc.id));
+      }
+    } catch (error) {
+      console.error('Failed to load virtual accounts:', error);
+    } finally {
+      inFlight.current.delete('virtual_accounts');
+    }
+  }, [fetchWithTimeout]);
 
   const loadPayoutHistory = useCallback(async () => {
     if (inFlight.current.has('history')) return;
@@ -179,7 +310,7 @@ export default function PayoutsPage() {
       }
       inFlight.current.delete('history');
     }
-  }, [historyFilter]);
+  }, [fetchWithTimeout, historyFilter]);
 
   const loadSchedule = useCallback(async () => {
     if (inFlight.current.has('schedule')) return;
@@ -197,14 +328,16 @@ export default function PayoutsPage() {
     } finally {
       inFlight.current.delete('schedule');
     }
-  }, []);
+  }, [fetchWithTimeout]);
 
   useEffect(() => {
     if (activeTab === 'manual') {
       if (!loadedTabs.current.manual) {
         loadedTabs.current.manual = true;
+        loadClients();
         loadBeneficiaries();
         loadBeneficiaryIds();
+        loadVirtualAccounts();
       }
       return;
     }
@@ -224,7 +357,46 @@ export default function PayoutsPage() {
         loadSchedule();
       }
     }
-  }, [activeTab, loadBeneficiaries, loadBeneficiaryIds, loadPayoutHistory, loadSchedule]);
+  }, [activeTab, loadClients, loadBeneficiaries, loadBeneficiaryIds, loadPayoutHistory, loadSchedule, loadVirtualAccounts]);
+
+  useEffect(() => {
+    if (!selectedClient) {
+      setClientBeneficiaryIds([]);
+      setSelectedClientVirtualAccount('');
+      return;
+    }
+    loadClientMachines(selectedClient);
+  }, [selectedClient, loadClientMachines]);
+
+  const hasBeneficiaryAccounts = virtualAccounts.some((va) => Boolean(va.beneficiary_id));
+  const filteredVirtualAccounts = selectedBeneficiary && hasBeneficiaryAccounts
+    ? virtualAccounts.filter((va) => va.beneficiary_id === selectedBeneficiary)
+    : virtualAccounts;
+
+  useEffect(() => {
+    if (selectedBeneficiary && filteredVirtualAccounts.length === 1) {
+      setSelectedVirtualAccount(filteredVirtualAccounts[0].id);
+      return;
+    }
+    if (selectedVirtualAccount && !filteredVirtualAccounts.some((va) => va.id === selectedVirtualAccount)) {
+      setSelectedVirtualAccount('');
+    }
+  }, [filteredVirtualAccounts, selectedBeneficiary, selectedVirtualAccount]);
+
+  const clientBeneficiarySet = new Set(clientBeneficiaryIds);
+  const filteredClientVirtualAccounts = clientBeneficiarySet.size > 0 && hasBeneficiaryAccounts
+    ? virtualAccounts.filter((va) => va.beneficiary_id && clientBeneficiarySet.has(va.beneficiary_id))
+    : virtualAccounts;
+
+  useEffect(() => {
+    if (selectedClient && filteredClientVirtualAccounts.length === 1) {
+      setSelectedClientVirtualAccount(filteredClientVirtualAccounts[0].id);
+      return;
+    }
+    if (selectedClientVirtualAccount && !filteredClientVirtualAccounts.some((va) => va.id === selectedClientVirtualAccount)) {
+      setSelectedClientVirtualAccount('');
+    }
+  }, [filteredClientVirtualAccounts, selectedClient, selectedClientVirtualAccount]);
 
   useEffect(() => {
     if (activeTab === 'history') {
@@ -260,8 +432,78 @@ export default function PayoutsPage() {
     }
   };
 
+  const handleClientCalculate = async () => {
+    if (!selectedClient) return;
+    setIsCalculating(true);
+    setClientCalculation(null);
+    setClientPayoutResult(null);
+    try {
+      const startDate = getDefaultStartDate(endDate);
+      const response = await fetch(`/api/clients/${selectedClient}/payout?layer=${layer}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'calculate', end_date: endDate, start_date: startDate }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Ошибка расчёта');
+      setClientCalculation(data.calculation);
+    } catch (error) {
+      console.error('Failed to calculate client payout:', error);
+      alert(error instanceof Error ? error.message : 'Ошибка расчёта');
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+
+  const handleClientExecute = async () => {
+    if (!clientCalculation || clientCalculation.payout_amount <= 0) return;
+    if (!confirm(`Выполнить выплату ${formatMoney(clientCalculation.payout_amount)} клиенту "${clientCalculation.client_name}"?`)) return;
+    setIsExecuting(true);
+    setClientPayoutResult(null);
+    try {
+      const startDate = clientCalculation.period_start || getDefaultStartDate(endDate);
+      const response = await fetch(`/api/clients/${selectedClient}/payout?layer=${layer}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'execute',
+          end_date: endDate,
+          start_date: startDate,
+          virtual_account: selectedClientVirtualAccount || undefined,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setClientPayoutResult({ success: false, message: data.error || 'Ошибка выплаты' });
+        return;
+      }
+      setClientPayoutResult({
+        success: true,
+        message: `Выплата выполнена! Deal ID: ${data.cyclops_deal_id}`,
+        deal_id: data.cyclops_deal_id,
+      });
+      addRecentAction({
+        type: 'Выплата',
+        description: `Выплата ${formatMoney(clientCalculation.payout_amount)} клиенту ${clientCalculation.client_name}`,
+        layer,
+      });
+      setClientCalculation(null);
+    } catch (error) {
+      setClientPayoutResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Ошибка',
+      });
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
   const handleExecutePayout = async () => {
     if (!calculation || calculation.payout_amount <= 0) return;
+    if (!selectedVirtualAccount) {
+      alert('Выберите виртуальный счёт для выплаты');
+      return;
+    }
 
     setIsExecuting(true);
 
@@ -273,6 +515,7 @@ export default function PayoutsPage() {
           action: 'execute',
           beneficiary_id: calculation.beneficiary_id,
           end_date: endDate,
+          virtual_account: selectedVirtualAccount,
         }),
       });
 
@@ -368,7 +611,11 @@ export default function PayoutsPage() {
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ru-RU');
+    if (!dateStr) return '—';
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+    const parsed = new Date(dateStr);
+    if (Number.isNaN(parsed.getTime())) return dateStr;
+    return isDateOnly ? parsed.toLocaleDateString('ru-RU') : parsed.toLocaleString('ru-RU');
   };
 
   const getStatusBadge = (status: string) => {
@@ -403,9 +650,9 @@ export default function PayoutsPage() {
     <div className="payouts-page">
       <header className="page-header">
         <div>
-          <h1 className="page-title">Выплаты бенефициарам</h1>
+          <h1 className="page-title">Выплаты</h1>
           <p className="page-description">
-            Расчёт и выполнение выплат на основе данных Vendista
+            Расчёт и выполнение выплат клиентам на основе данных Vendista
           </p>
         </div>
       </header>
@@ -434,8 +681,209 @@ export default function PayoutsPage() {
       {/* Manual Payout Tab */}
       {activeTab === 'manual' && (
         <div className="manual-payout">
+          {/* Mode Switcher */}
+          <div className="mode-switcher">
+            <button
+              className={`mode-btn ${payoutMode === 'client' ? 'active' : ''}`}
+              onClick={() => { setPayoutMode('client'); setCalculation(null); setClientCalculation(null); }}
+            >
+              По клиентам
+            </button>
+            <button
+              className={`mode-btn ${payoutMode === 'beneficiary' ? 'active' : ''}`}
+              onClick={() => { setPayoutMode('beneficiary'); setCalculation(null); setClientCalculation(null); }}
+            >
+              По бенефициарам (старый)
+            </button>
+          </div>
+
+          {/* Client payout form */}
+          {payoutMode === 'client' && (
+            <div className="card">
+              <h2 className="card-title">Выплата клиенту</h2>
+
+              {clientPayoutResult && (
+                <div className={`result-banner ${clientPayoutResult.success ? 'success' : 'error'}`}>
+                  <p>{clientPayoutResult.message}</p>
+                  {clientPayoutResult.deal_id && (
+                    <a href={`/deals/${clientPayoutResult.deal_id}`} className="result-link">
+                      Открыть сделку в Cyclops
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Клиент</label>
+                  <select
+                    className="form-input form-select"
+                    value={selectedClient}
+                    onChange={(e) => {
+                      setSelectedClient(e.target.value);
+                      setClientCalculation(null);
+                      setClientPayoutResult(null);
+                      setSelectedClientVirtualAccount('');
+                    }}
+                  >
+                    <option value="">Выберите клиента</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.inn ? `(${c.inn})` : ''} — {c.machine_count} авт. [{PAYOUT_TYPE_LABELS[c.payout_type]}]
+                      </option>
+                    ))}
+                  </select>
+                  {clients.length === 0 && (
+                    <span className="form-hint">
+                      Нет клиентов с привязанными автоматами.{' '}
+                      <a href="/clients/create">Создать клиента</a>
+                    </span>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Виртуальный счёт (плательщик)</label>
+                  <select
+                    className="form-input form-select"
+                    value={selectedClientVirtualAccount}
+                    onChange={(e) => setSelectedClientVirtualAccount(e.target.value)}
+                    disabled={!selectedClient}
+                  >
+                    <option value="">Выберите счёт</option>
+                    {filteredClientVirtualAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.id}
+                        {typeof account.balance === 'number'
+                          ? ` — ${new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(account.balance)}`
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedClient && filteredClientVirtualAccounts.length === 0 && (
+                    <span className="form-hint">Нет доступных виртуальных счетов для выбранного клиента</span>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Дата окончания периода</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={endDate}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setClientCalculation(null);
+                    }}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              </div>
+
+              <button
+                className="btn btn-secondary"
+                onClick={handleClientCalculate}
+                disabled={!selectedClient || isCalculating}
+              >
+                {isCalculating ? (
+                  <>
+                    <div className="spinner" style={{ width: 16, height: 16 }} />
+                    Расчёт...
+                  </>
+                ) : (
+                  'Рассчитать'
+                )}
+              </button>
+
+              {clientCalculation && (
+                <div className="calculation-result" style={{ marginTop: 24 }}>
+                  <h3 className="section-title">Результат расчёта — {clientCalculation.client_name}</h3>
+
+                  <div className="calculation-summary">
+                    <div className="summary-item">
+                      <span className="summary-label">Период</span>
+                      <span className="summary-value">
+                        {formatDate(clientCalculation.period_start)} — {formatDate(clientCalculation.period_end)}
+                      </span>
+                    </div>
+                    <div className="summary-item">
+                      <span className="summary-label">Продажи</span>
+                      <span className="summary-value money">{formatMoney(clientCalculation.total_sales)}</span>
+                    </div>
+                    <div className="summary-item">
+                      <span className="summary-label">Комиссия</span>
+                      <span className="summary-value money money-negative">-{formatMoney(clientCalculation.total_commission)}</span>
+                    </div>
+                    <div className="summary-item highlight">
+                      <span className="summary-label">К выплате</span>
+                      <span className="summary-value money money-positive">{formatMoney(clientCalculation.payout_amount)}</span>
+                    </div>
+                  </div>
+
+                  {clientCalculation.machines.length > 0 && (
+                    <div className="machines-breakdown">
+                      <div className="table-wrapper">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Автомат</th>
+                              <th>Продажи</th>
+                              <th>Комиссия</th>
+                              <th>К выплате</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clientCalculation.machines.map((m) => (
+                              <tr key={m.machine_id}>
+                                <td>
+                                  <span className="code">{m.vendista_id}</span>
+                                  {m.machine_name && <span className="machine-name"> — {m.machine_name}</span>}
+                                </td>
+                                <td className="money">{formatMoney(m.sales_amount)}</td>
+                                <td className="money money-negative">
+                                  -{formatMoney(m.commission_amount)} ({m.commission_percent}%)
+                                </td>
+                                <td className="money money-positive">{formatMoney(m.net_amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {clientCalculation.payout_amount > 0 && (
+                    <div className="calculation-actions">
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleClientExecute}
+                        disabled={isExecuting}
+                      >
+                        {isExecuting ? (
+                          <>
+                            <div className="spinner" style={{ width: 16, height: 16 }} />
+                            Создание сделки...
+                          </>
+                        ) : (
+                          <>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="9 11 12 14 22 4" />
+                              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                            </svg>
+                            Выплатить {formatMoney(clientCalculation.payout_amount)} (Cyclops Deal)
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Beneficiary payout form (legacy) */}
+          {payoutMode === 'beneficiary' && (
           <div className="card">
-            <h2 className="card-title">Расчёт выплаты</h2>
+            <h2 className="card-title">Расчёт выплаты (по бенефициару)</h2>
 
             <div className="form-row">
               <div className="form-group">
@@ -446,6 +894,7 @@ export default function PayoutsPage() {
                   onChange={(e) => {
                     setSelectedBeneficiary(e.target.value);
                     setCalculation(null);
+                    setSelectedVirtualAccount('');
                   }}
                 >
                   <option value="">Выберите бенефициара</option>
@@ -459,6 +908,29 @@ export default function PayoutsPage() {
                   <span className="form-hint">
                     Нет бенефициаров с привязанными автоматами
                   </span>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Виртуальный счёт (плательщик)</label>
+                <select
+                  className="form-input form-select"
+                  value={selectedVirtualAccount}
+                  onChange={(e) => setSelectedVirtualAccount(e.target.value)}
+                  disabled={!selectedBeneficiary}
+                >
+                  <option value="">Выберите счёт</option>
+                  {filteredVirtualAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.id}
+                      {typeof account.balance === 'number'
+                        ? ` — ${new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(account.balance)}`
+                        : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedBeneficiary && filteredVirtualAccounts.length === 0 && (
+                  <span className="form-hint">Нет доступных виртуальных счетов для выбранного бенефициара</span>
                 )}
               </div>
 
@@ -492,8 +964,9 @@ export default function PayoutsPage() {
               )}
             </button>
           </div>
+          )}
 
-          {calculation && (
+          {payoutMode === 'beneficiary' && calculation && (
             <div className="card calculation-result">
               <h2 className="card-title">Результат расчёта</h2>
 
@@ -746,6 +1219,61 @@ export default function PayoutsPage() {
       <style jsx>{`
         .payouts-page {
           max-width: 1200px;
+        }
+
+        .mode-switcher {
+          display: flex;
+          gap: 4px;
+          background: var(--bg-secondary);
+          border-radius: 10px;
+          padding: 4px;
+          margin-bottom: 20px;
+          width: fit-content;
+        }
+
+        .mode-btn {
+          padding: 8px 20px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          cursor: pointer;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 500;
+          transition: all 0.15s ease;
+        }
+
+        .mode-btn.active {
+          background: var(--bg-primary);
+          color: var(--text-primary);
+          box-shadow: var(--shadow-sm);
+        }
+
+        .result-banner {
+          padding: 12px 16px;
+          border-radius: 8px;
+          margin-bottom: 16px;
+          font-size: 14px;
+        }
+
+        .result-banner.success {
+          background: #dcfce7;
+          color: #166534;
+        }
+
+        .result-banner.error {
+          background: #fef2f2;
+          color: #dc2626;
+        }
+
+        .result-banner p {
+          margin: 0 0 4px;
+        }
+
+        .result-link {
+          color: inherit;
+          font-weight: 500;
+          text-decoration: underline;
         }
 
         .form-row {
