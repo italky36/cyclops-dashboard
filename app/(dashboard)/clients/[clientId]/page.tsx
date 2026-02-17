@@ -847,7 +847,7 @@ export default function ClientDetailPage() {
         description: `Выплата ${calculation.payout_amount.toFixed(2)} руб. клиенту ${client?.name}`,
         layer,
       });
-      setCalculation(null);
+      loadClient();
     } catch (err) {
       setPayoutResult({
         success: false,
@@ -899,6 +899,7 @@ export default function ClientDetailPage() {
     navigator.clipboard.writeText(text).catch(() => {});
   };
 
+  // Step 1 is always done (date is pre-filled), step 2 after calculation, step 3 after execution
   const payoutStep = payoutResult?.success ? 3 : calculation ? 2 : 1;
 
   return (
@@ -1688,8 +1689,8 @@ export default function ClientDetailPage() {
 
         {/* Step Indicator */}
         <div className="stepper">
-          <div className={`stepper-step ${payoutStep >= 1 ? 'active' : ''} ${payoutStep > 1 ? 'completed' : ''}`}>
-            <div className="step-circle">{payoutStep > 1 ? '\u2713' : '1'}</div>
+          <div className={`stepper-step completed`}>
+            <div className="step-circle">{'\u2713'}</div>
             <span className="step-label">Выбор периода</span>
           </div>
           <div className="stepper-line" />
@@ -1698,9 +1699,9 @@ export default function ClientDetailPage() {
             <span className="step-label">Расчёт</span>
           </div>
           <div className="stepper-line" />
-          <div className={`stepper-step ${payoutStep >= 3 ? 'active' : ''}`}>
-            <div className="step-circle">3</div>
-            <span className="step-label">Подтверждение</span>
+          <div className={`stepper-step ${payoutStep >= 3 ? 'active completed' : ''}`}>
+            <div className="step-circle">{payoutStep >= 3 ? '\u2713' : '3'}</div>
+            <span className="step-label">Выплата</span>
           </div>
         </div>
 
@@ -1937,7 +1938,6 @@ export default function ClientDetailPage() {
       <style jsx>{`
         .page-container {
           padding: 24px;
-          max-width: 1100px;
         }
         .page-header {
           display: flex;

@@ -392,7 +392,6 @@ export default function DealsPage() {
 
       <style jsx>{`
         .deals-page {
-          max-width: 1400px;
         }
 
         .page-header {

@@ -166,9 +166,7 @@ export function DealHeader({
           align-items: center;
           justify-content: space-between;
           gap: 16px;
-          max-width: 1200px;
           width: 100%;
-          margin: 0 auto;
         }
 
         .deal-header-left {

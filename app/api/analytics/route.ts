@@ -226,11 +226,11 @@ export async function GET(request: NextRequest) {
     // Дополняем данные локальными выплатами клиентам (на случай если всё из кеша)
     const db2 = getDb();
     const allLocalPayouts = db2.prepare(`
-      SELECT DATE(created_at) as date, SUM(payout_amount) as total
+      SELECT substr(created_at, 1, 10) as date, SUM(payout_amount) as total
       FROM beneficiary_payouts
-      WHERE DATE(created_at) BETWEEN ? AND ?
+      WHERE substr(created_at, 1, 10) BETWEEN ? AND ?
         AND status IN ('pending', 'executed', 'completed')
-      GROUP BY DATE(created_at)
+      GROUP BY substr(created_at, 1, 10)
     `).all(startDate, endDate) as Array<{ date: string; total: number }>;
     const localPayoutsMap = new Map(allLocalPayouts.map(r => [r.date, r.total]));
 

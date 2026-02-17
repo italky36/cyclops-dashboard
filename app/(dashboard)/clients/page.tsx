@@ -228,7 +228,6 @@ export default function ClientsPage() {
       <style jsx>{`
         .page-container {
           padding: 24px;
-          max-width: 1200px;
         }
         .page-header {
           display: flex;

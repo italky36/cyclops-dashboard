@@ -423,7 +423,6 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
         </div>
         <style jsx>{`
           .deal-detail-page {
-            max-width: 1200px;
           }
 
           .deal-skeleton {
@@ -478,7 +477,6 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
         </button>
         <style jsx>{`
           .deal-detail-page {
-            max-width: 1200px;
           }
 
           .error-banner {
