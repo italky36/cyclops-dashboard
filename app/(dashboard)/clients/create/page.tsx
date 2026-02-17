@@ -895,7 +895,6 @@ export default function CreateClientPage() {
 
       <style jsx>{`
         .create-client-page {
-          max-width: 920px;
         }
 
         .breadcrumb {

@@ -623,7 +623,6 @@ export default function PaymentsPage() {
 
       <style jsx>{`
         .payments-page {
-          max-width: 1600px;
         }
 
         .page-header {

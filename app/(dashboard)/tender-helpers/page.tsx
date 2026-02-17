@@ -967,7 +967,6 @@ export default function TenderHelpersPage() {
 
       <style jsx>{`
         .tender-helpers-page {
-          max-width: 1100px;
         }
 
         .config-form,

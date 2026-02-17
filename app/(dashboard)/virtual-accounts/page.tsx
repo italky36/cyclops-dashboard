@@ -1195,7 +1195,6 @@ export default function VirtualAccountsPage() {
 
       <style jsx>{`
         .accounts-page {
-          max-width: 1400px;
         }
 
         .page-header {

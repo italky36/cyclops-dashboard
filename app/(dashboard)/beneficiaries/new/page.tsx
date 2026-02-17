@@ -841,7 +841,6 @@ export default function NewBeneficiaryPage() {
 
       <style jsx>{`
         .new-beneficiary-page {
-          max-width: 800px;
         }
 
         .breadcrumb {

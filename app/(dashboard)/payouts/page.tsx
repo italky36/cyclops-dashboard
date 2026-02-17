@@ -1218,7 +1218,6 @@ export default function PayoutsPage() {
 
       <style jsx>{`
         .payouts-page {
-          max-width: 1200px;
         }
 
         .mode-switcher {

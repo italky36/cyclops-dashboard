@@ -791,7 +791,6 @@ export default function NewDealPage() {
 
       <style jsx>{`
         .new-deal-page {
-          max-width: 900px;
         }
 
         .breadcrumb {

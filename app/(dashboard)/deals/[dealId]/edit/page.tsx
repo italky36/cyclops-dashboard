@@ -937,7 +937,6 @@ export default function EditDealPage({ params }: { params: { dealId: string } })
 
       <style jsx>{`
         .edit-deal-page {
-          max-width: 900px;
         }
 
         .breadcrumb {

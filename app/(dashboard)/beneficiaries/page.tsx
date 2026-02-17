@@ -453,7 +453,6 @@ export default function BeneficiariesPage() {
 
       <style jsx>{`
         .beneficiaries-page {
-          max-width: 1400px;
         }
 
         .page-header {

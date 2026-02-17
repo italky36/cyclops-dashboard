@@ -802,7 +802,6 @@ export default function DealPage({ params }: { params: { dealId: string } }) {
 
       <style jsx>{`
         .deal-detail-page {
-          max-width: 1200px;
           display: flex;
           flex-direction: column;
           gap: 20px;

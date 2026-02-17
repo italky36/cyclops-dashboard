@@ -336,8 +336,6 @@ export default function MachinesPage() {
       <style jsx>{`
         .page {
           padding: 24px;
-          max-width: 1400px;
-          margin: 0 auto;
         }
 
         .page-header {

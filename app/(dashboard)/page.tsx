@@ -320,7 +320,6 @@ export default function DashboardPage() {
 
       <style jsx>{`
         .dashboard {
-          max-width: 1400px;
         }
 
         .connection-banner {

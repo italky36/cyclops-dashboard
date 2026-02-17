@@ -1899,7 +1899,6 @@ export default function BeneficiaryDetailPage() {
 
       <style jsx>{`
         .beneficiary-detail {
-          max-width: 1200px;
         }
 
         .page-header-top {
