@@ -319,9 +319,10 @@ export function assignMachineToClient(params: {
   commission_percent: number;
   beneficiary_id?: string;
   created_by?: string;
+  assigned_at?: string;
 }): void {
   const db = getDb();
-  const now = new Date().toISOString();
+  const now = params.assigned_at || new Date().toISOString();
 
   // Проверяем, нет ли уже активной привязки для этого автомата
   const existing = db.prepare(`
@@ -467,26 +468,10 @@ export interface ClientPayoutCalculation {
   payout_amount: number;
 }
 
-const parseDateInput = (value: string, endOfDay: boolean): Date => {
-  if (!value) return new Date(NaN);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date(`${value}${endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z'}`);
-  }
-  return new Date(value);
-};
-
-const normalizeEndDateTime = (value?: string): Date => {
-  if (!value) return new Date();
-  return parseDateInput(value, true);
-};
-
-const normalizeStartDateTime = (value: string): Date => parseDateInput(value, false);
-
 export function calculateClientPayout(
   client_id: number,
   transactions: Array<{ id: string | number; machine_id: string | number; date: string; amount: number }>,
-  end_date?: string,
-  start_date?: string
+  end_date?: string
 ): ClientPayoutCalculation {
   const db = getDb();
   const client = getClientById(client_id);
@@ -494,18 +479,16 @@ export function calculateClientPayout(
     throw new Error(`Клиент ${client_id} не найден`);
   }
 
-  const endDate = normalizeEndDateTime(end_date);
-  const requestedStart = start_date ? normalizeStartDateTime(start_date) : null;
-  const requestedStartTs = requestedStart ? requestedStart.getTime() : null;
-  const now = endDate.toISOString();
+  const endDateTs = end_date ? new Date(end_date).getTime() : Date.now();
+  const endDateIso = new Date(endDateTs).toISOString();
   const machines = getMachinesByClient(client_id);
 
   if (machines.length === 0) {
     return {
       client_id,
       client_name: client.name,
-      period_start: requestedStart ? requestedStart.toISOString() : now,
-      period_end: now,
+      period_start: endDateIso,
+      period_end: endDateIso,
       machines: [],
       total_sales: 0,
       total_commission: 0,
@@ -513,26 +496,24 @@ export function calculateClientPayout(
     };
   }
 
-  // Последняя успешная выплата для определения начала периода
+  // Последняя успешная выплата — считаем от её фактического времени завершения
   const lastPayout = db.prepare(`
     SELECT period_end FROM beneficiary_payouts
     WHERE client_id = ? AND status = 'completed'
     ORDER BY period_end DESC LIMIT 1
   `).get(client_id) as { period_end: string } | undefined;
 
+  const lastPayoutTs = lastPayout ? new Date(lastPayout.period_end).getTime() : null;
+
   const machineResults: ClientPayoutCalculation['machines'] = [];
-  let periodStart = requestedStart ? requestedStart.toISOString() : now;
-  let periodStartTs = requestedStartTs ?? endDate.getTime();
+  let periodStartTs = endDateTs;
 
   for (const machine of machines) {
-    const assignmentTime = normalizeStartDateTime(machine.assigned_at).getTime();
-    const lastPayoutTime = lastPayout ? normalizeStartDateTime(lastPayout.period_end).getTime() : null;
-    const baseStartTime = requestedStartTs !== null ? requestedStartTs : assignmentTime;
-    const startTime = lastPayoutTime !== null ? Math.max(baseStartTime, lastPayoutTime) : baseStartTime;
+    const assignmentTs = new Date(machine.assigned_at).getTime();
+    const startTime = lastPayoutTs !== null ? Math.max(assignmentTs, lastPayoutTs) : assignmentTs;
 
     if (startTime < periodStartTs) {
       periodStartTs = startTime;
-      periodStart = new Date(startTime).toISOString();
     }
 
     const machineTransactions = transactions.filter(t => {
@@ -540,7 +521,7 @@ export function calculateClientPayout(
       const txTime = new Date(t.date).getTime();
       if (Number.isNaN(txTime)) return false;
       const machineIds = [machine.vendista_id, machine.terminal_id].filter(Boolean).map(String);
-      return machineIds.includes(transaction_term_id) && txTime >= startTime && txTime <= endDate.getTime();
+      return machineIds.includes(transaction_term_id) && txTime >= startTime && txTime <= endDateTs;
     });
 
     const sales_amount = machineTransactions.reduce((sum, t) => sum + t.amount, 0);
@@ -562,8 +543,8 @@ export function calculateClientPayout(
   return {
     client_id,
     client_name: client.name,
-    period_start: periodStart,
-    period_end: now,
+    period_start: new Date(periodStartTs).toISOString(),
+    period_end: endDateIso,
     machines: machineResults,
     total_sales: machineResults.reduce((sum, m) => sum + m.sales_amount, 0),
     total_commission: machineResults.reduce((sum, m) => sum + m.commission_amount, 0),
@@ -736,8 +717,7 @@ export function createClientPayout(
 export function calculateClientPayoutUnified(
   client_id: number,
   transactions: Array<{ id: string | number; machine_id: string | number; date: string; amount: number }>,
-  end_date?: string,
-  start_date?: string
+  end_date?: string
 ): ClientPayoutCalculation {
   const client = getClientById(client_id);
   if (!client) {
@@ -746,22 +726,21 @@ export function calculateClientPayoutUnified(
 
   const commissionPercent = client.commission_percent;
   if (commissionPercent === null || commissionPercent === undefined) {
-    return calculateClientPayout(client_id, transactions, end_date, start_date);
+    return calculateClientPayout(client_id, transactions, end_date);
   }
 
   const db = getDb();
-  const endDate = normalizeEndDateTime(end_date);
-  const requestedStart = start_date ? normalizeStartDateTime(start_date) : null;
-  const requestedStartTs = requestedStart ? requestedStart.getTime() : null;
-  const now = endDate.toISOString();
+  // Используем реальные timestamps без искусственных границ дней
+  const endDateTs = end_date ? new Date(end_date).getTime() : Date.now();
+  const endDateIso = new Date(endDateTs).toISOString();
   const machines = getMachinesByClient(client_id);
 
   if (machines.length === 0) {
     return {
       client_id,
       client_name: client.name,
-      period_start: requestedStart ? requestedStart.toISOString() : now,
-      period_end: now,
+      period_start: endDateIso,
+      period_end: endDateIso,
       machines: [],
       total_sales: 0,
       total_commission: 0,
@@ -769,37 +748,54 @@ export function calculateClientPayoutUnified(
     };
   }
 
-  // Последняя успешная выплата для определения начала периода
+  // Последняя успешная выплата — считаем от её фактического времени завершения
   const lastPayout = db.prepare(`
     SELECT period_end FROM beneficiary_payouts
     WHERE client_id = ? AND status = 'completed'
     ORDER BY period_end DESC LIMIT 1
   `).get(client_id) as { period_end: string } | undefined;
 
+  const lastPayoutTs = lastPayout ? new Date(lastPayout.period_end).getTime() : null;
+
   const machineResults: ClientPayoutCalculation['machines'] = [];
-  let periodStart = requestedStart ? requestedStart.toISOString() : now;
-  let periodStartTs = requestedStartTs ?? endDate.getTime();
+  let periodStartTs = endDateTs;
+
+  console.log('[CalcUnified] All transactions received:', {
+    count: transactions.length,
+    unique_machine_ids: Array.from(new Set(transactions.map(t => String(t.machine_id)))),
+  });
 
   for (const machine of machines) {
-    const assignmentTime = normalizeStartDateTime(machine.assigned_at).getTime();
-    const lastPayoutTime = lastPayout ? normalizeStartDateTime(lastPayout.period_end).getTime() : null;
-    const baseStartTime = requestedStartTs !== null ? requestedStartTs : assignmentTime;
-    const startTime = lastPayoutTime !== null ? Math.max(baseStartTime, lastPayoutTime) : baseStartTime;
+    const assignmentTs = new Date(machine.assigned_at).getTime();
+    // Начало = от момента привязки, но не раньше последней выплаты
+    const startTime = lastPayoutTs !== null ? Math.max(assignmentTs, lastPayoutTs) : assignmentTs;
 
     if (startTime < periodStartTs) {
       periodStartTs = startTime;
-      periodStart = new Date(startTime).toISOString();
     }
+
+    const matchIds = [machine.vendista_id, machine.terminal_id].filter(Boolean).map(String);
 
     const machineTransactions = transactions.filter(t => {
       const transaction_term_id = String(t.machine_id);
       const txTime = new Date(t.date).getTime();
       if (Number.isNaN(txTime)) return false;
-      const machineIds = [machine.vendista_id, machine.terminal_id].filter(Boolean).map(String);
-      return machineIds.includes(transaction_term_id) && txTime >= startTime && txTime <= endDate.getTime();
+      return matchIds.includes(transaction_term_id) && txTime >= startTime && txTime <= endDateTs;
     });
 
     const sales_amount = machineTransactions.reduce((sum, t) => sum + t.amount, 0);
+
+    console.log(`[CalcUnified] Machine "${machine.name}" (id=${machine.id}):`, {
+      vendista_id: machine.vendista_id,
+      terminal_id: machine.terminal_id,
+      matchIds,
+      assigned_at: machine.assigned_at,
+      startTime: new Date(startTime).toISOString(),
+      endTime: new Date(endDateTs).toISOString(),
+      matched_tx: machineTransactions.length,
+      sales_amount,
+    });
+
     // Единая комиссия клиента для всех машин
     const commission_amount = Math.round(sales_amount * (commissionPercent / 100) * 100) / 100;
     const net_amount = Math.round((sales_amount - commission_amount) * 100) / 100;
@@ -822,8 +818,8 @@ export function calculateClientPayoutUnified(
   return {
     client_id,
     client_name: client.name,
-    period_start: periodStart,
-    period_end: now,
+    period_start: new Date(periodStartTs).toISOString(),
+    period_end: endDateIso,
     machines: machineResults,
     total_sales,
     total_commission,

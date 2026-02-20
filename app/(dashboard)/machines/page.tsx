@@ -16,11 +16,11 @@ interface VendingMachine {
   created_at: string;
   assignment?: {
     id: number;
-    beneficiary_id: string;
+    client_id: number | null;
+    client_name: string | null;
     commission_percent: number;
     assigned_at: string;
   };
-  beneficiary_name?: string;
 }
 
 export default function MachinesPage() {
@@ -55,7 +55,8 @@ export default function MachinesPage() {
       const assignmentsMap = new Map(
         assignmentsData.assignments?.map((a: {
           machine_id: number;
-          beneficiary_id: string;
+          client_id: number | null;
+          client_name: string | null;
           commission_percent: number;
           assigned_at: string;
           id: number;
@@ -277,7 +278,7 @@ export default function MachinesPage() {
                 <th>Модель</th>
                 <th>Адрес</th>
                 <th>Статус</th>
-                <th>Бенефициар</th>
+                <th>Клиент</th>
                 <th></th>
               </tr>
             </thead>
@@ -288,7 +289,9 @@ export default function MachinesPage() {
                     <span className="mono-text">{machine.terminal_id || '—'}</span>
                   </td>
                   <td>
-                    <div className="cell-main">{machine.name || '—'}</div>
+                    <Link href={`/machines/${machine.id}`} className="cell-main link">
+                      {machine.name || `Автомат #${machine.id}`}
+                    </Link>
                     {machine.serial_number && (
                       <div className="cell-sub">S/N: {machine.serial_number}</div>
                     )}
@@ -303,12 +306,12 @@ export default function MachinesPage() {
                     </span>
                   </td>
                   <td>
-                    {machine.assignment ? (
+                    {machine.assignment?.client_id ? (
                       <Link
-                        href={`/beneficiaries/${machine.assignment.beneficiary_id}`}
+                        href={`/clients/${machine.assignment.client_id}`}
                         className="link"
                       >
-                        {machine.assignment.beneficiary_id}
+                        {machine.assignment.client_name || `Клиент #${machine.assignment.client_id}`}
                       </Link>
                     ) : (
                       <span className="text-tertiary">Не привязан</span>
@@ -316,9 +319,9 @@ export default function MachinesPage() {
                   </td>
                   <td>
                     <div className="table-actions">
-                      {machine.assignment && (
+                      {machine.assignment?.client_id && (
                         <Link
-                          href={`/beneficiaries/${machine.assignment.beneficiary_id}`}
+                          href={`/clients/${machine.assignment.client_id}`}
                           className="btn-sm btn-secondary"
                         >
                           Подробнее

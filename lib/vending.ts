@@ -389,12 +389,14 @@ export function getAssignmentHistory(machine_id: number): MachineAssignment[] {
 /**
  * Получение всех привязок (активных)
  */
-export function getAllActiveAssignments(): (MachineAssignment & { machine: VendingMachine })[] {
+export function getAllActiveAssignments(): (MachineAssignment & { machine: VendingMachine; client_id: number | null; client_name: string | null })[] {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT a.*, m.vendista_id, m.name as machine_name, m.address, m.is_active as machine_is_active
+    SELECT a.*, m.vendista_id, m.name as machine_name, m.address, m.is_active as machine_is_active,
+           c.id as client_id_resolved, c.name as client_name
     FROM machine_assignments a
     JOIN vending_machines m ON a.machine_id = m.id
+    LEFT JOIN clients c ON a.client_id = c.id
     WHERE a.unassigned_at IS NULL
     ORDER BY a.assigned_at DESC
   `).all() as Array<MachineAssignment & {
@@ -402,10 +404,14 @@ export function getAllActiveAssignments(): (MachineAssignment & { machine: Vendi
     machine_name: string | null;
     address: string | null;
     machine_is_active: number;
+    client_id_resolved: number | null;
+    client_name: string | null;
   }>;
 
   return rows.map(row => ({
     ...row,
+    client_id: row.client_id_resolved ?? null,
+    client_name: row.client_name ?? null,
     machine: {
       id: row.machine_id,
       vendista_id: row.vendista_id,
@@ -629,9 +635,10 @@ export function updatePayoutStatus(
       cyclops_deal_id = COALESCE(?, cyclops_deal_id),
       cyclops_response = COALESCE(?, cyclops_response),
       error_message = COALESCE(?, error_message),
-      executed_at = CASE WHEN ? = 'completed' THEN ? ELSE executed_at END
+      executed_at = CASE WHEN ? = 'completed' THEN ? ELSE executed_at END,
+      period_end = CASE WHEN ? = 'completed' THEN ? ELSE period_end END
     WHERE id = ?
-  `).run(status, cyclops_deal_id || null, cyclops_response || null, error_message || null, status, now, payout_id);
+  `).run(status, cyclops_deal_id || null, cyclops_response || null, error_message || null, status, now, status, now, payout_id);
 
   logAction('update_payout_status', 'beneficiary_payout', String(payout_id), JSON.stringify({ status, cyclops_deal_id }));
 }

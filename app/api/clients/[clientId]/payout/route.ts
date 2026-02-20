@@ -124,33 +124,25 @@ export async function POST(
       const vendistaClient = createVendistaClient();
       const terminal_ids = machines
         .map(m => m.terminal_id)
-        .filter((id) => id !== null && id !== undefined);
+        .filter((id): id is string => id !== null && id !== undefined);
 
-      const machine_ids = machines
-        .filter(m => !m.terminal_id)
-        .map(m => m.vendista_id)
-        .filter((mid) => mid !== null && mid !== undefined);
-
-      console.log('[Payout API] Filtered IDs:', {
+      console.log('[Payout API] Terminal IDs:', {
         terminal_ids_count: terminal_ids.length,
         terminal_ids,
-        machine_ids_count: machine_ids.length,
-        machine_ids,
       });
 
-      const endDate = normalizeDateTime(end_date, true);
+      // Используем реальные timestamp без искусственных границ дней
+      const endDate = end_date ? new Date(end_date).toISOString() : new Date().toISOString();
       const startDate = start_date
-        ? normalizeDateTime(start_date, false)
+        ? new Date(start_date).toISOString()
         : machines.reduce((earliest, m) => {
-          const assignedDate = normalizeDateTime(m.assigned_at);
-          return assignedDate < earliest ? assignedDate : earliest;
+          return m.assigned_at < earliest ? m.assigned_at : earliest;
         }, endDate);
 
       console.log('[Payout API] Fetching Vendista transactions:', {
         client_id: id,
         client_name: client.name,
         terminal_ids,
-        machine_ids,
         startDate,
         endDate,
         machines_count: machines.length,
@@ -158,15 +150,13 @@ export async function POST(
 
       debugInfo = {
         terminal_ids,
-        machine_ids,
         startDate,
         endDate,
         machines_count: machines.length,
       };
 
-      if (terminal_ids.length > 0 || machine_ids.length > 0) {
+      if (terminal_ids.length > 0) {
         transactions = await vendistaClient.fetchTransactionsForMachines({
-          machine_ids,
           terminal_ids,
           startDate,
           endDate,
@@ -185,7 +175,7 @@ export async function POST(
           total_amount: transactions.reduce((sum, t) => sum + t.amount, 0),
         };
       } else {
-        console.log('[Payout API] No terminal_ids or machine_ids found');
+        console.log('[Payout API] No terminal_ids found');
       }
     } else {
       console.log('[Payout API] Vendista not configured');
@@ -195,8 +185,7 @@ export async function POST(
     const calculation = calculateClientPayoutUnified(
       id,
       transactions,
-      normalizeDateTime(end_date, true),
-      start_date ? normalizeDateTime(start_date, false) : undefined
+      end_date ? new Date(end_date).toISOString() : new Date().toISOString()
     );
 
     // Только расчёт (preview)

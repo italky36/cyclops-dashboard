@@ -196,13 +196,20 @@ export default function ClientDetailPage() {
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [machineSearch, setMachineSearch] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
+  const [assignDateMode, setAssignDateMode] = useState<'auto' | 'custom'>('auto');
+  const [assignDateValue, setAssignDateValue] = useState('');
 
   // Payout
   const [calculation, setCalculation] = useState<PayoutCalculation | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [payoutResult, setPayoutResult] = useState<{ success: boolean; message: string; deal_id?: string } | null>(null);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => {
+    const now = new Date();
+    // datetime-local формат: YYYY-MM-DDTHH:mm
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  });
   const [payoutHistory, setPayoutHistory] = useState<ClientPayoutHistoryItem[]>([]);
   const [dealStatuses, setDealStatuses] = useState<Record<string, string>>({});
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -436,6 +443,7 @@ export default function ClientDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           machine_ids: selectedMachineIds,
+          assigned_at: assignDateMode === 'custom' && assignDateValue ? assignDateValue : undefined,
         }),
       });
       if (!res.ok) {
@@ -449,6 +457,8 @@ export default function ClientDetailPage() {
       });
       setSelectedMachineIds([]);
       setLastSelectedIndex(null);
+      setAssignDateMode('auto');
+      setAssignDateValue('');
       loadMachines();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка');
@@ -1612,10 +1622,41 @@ export default function ClientDetailPage() {
                 })
               )}
             </div>
+            <div className="assign-date-row">
+              <span className="assign-date-label">Дата привязки:</span>
+              <div className="assign-date-options">
+                <label className={`assign-date-option ${assignDateMode === 'auto' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="assignDateMode"
+                    checked={assignDateMode === 'auto'}
+                    onChange={() => setAssignDateMode('auto')}
+                  />
+                  Текущее время
+                </label>
+                <label className={`assign-date-option ${assignDateMode === 'custom' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="assignDateMode"
+                    checked={assignDateMode === 'custom'}
+                    onChange={() => setAssignDateMode('custom')}
+                  />
+                  Указать
+                </label>
+              </div>
+              {assignDateMode === 'custom' && (
+                <input
+                  type="datetime-local"
+                  className="input assign-date-input"
+                  value={assignDateValue}
+                  onChange={(e) => setAssignDateValue(e.target.value)}
+                />
+              )}
+            </div>
             <button
               className="btn btn-sm btn-primary"
               onClick={handleAssignMachine}
-              disabled={selectedMachineIds.length === 0 || isAssigning}
+              disabled={selectedMachineIds.length === 0 || isAssigning || (assignDateMode === 'custom' && !assignDateValue)}
             >
               {isAssigning ? '...' : `Привязать (${selectedMachineIds.length})`}
             </button>
@@ -1707,9 +1748,9 @@ export default function ClientDetailPage() {
 
         <div className="payout-controls">
           <div className="form-group" style={{ flex: 1, maxWidth: 280 }}>
-            <label>Дата окончания периода</label>
+            <label>Дата и время окончания периода</label>
             <input
-              type="date"
+              type="datetime-local"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               className="input"
@@ -2169,6 +2210,49 @@ export default function ClientDetailPage() {
         .assign-item-subtitle {
           font-size: 12px;
           color: var(--text-secondary);
+        }
+        .assign-date-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .assign-date-label {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--text-secondary);
+          white-space: nowrap;
+        }
+        .assign-date-options {
+          display: flex;
+          gap: 4px;
+          background: var(--bg-tertiary);
+          padding: 3px;
+          border-radius: 8px;
+        }
+        .assign-date-option {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 5px 10px;
+          font-size: 13px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          border-radius: 6px;
+          transition: all 0.15s;
+        }
+        .assign-date-option.active {
+          background: white;
+          color: var(--accent-color);
+          box-shadow: var(--shadow-sm);
+        }
+        .assign-date-option input[type="radio"] {
+          display: none;
+        }
+        .assign-date-input {
+          max-width: 240px;
+          padding: 6px 10px;
+          font-size: 13px;
         }
         .machine-chips {
           display: flex;

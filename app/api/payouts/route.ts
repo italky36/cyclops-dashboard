@@ -1,31 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createVendistaClient, isVendistaConfigured } from '@/lib/vendista';
 import {
-  calculatePayout,
-  createPayout,
-  updatePayoutStatus,
   getPayoutById,
   getPayoutHistory,
   getPayoutDetails,
   getPayoutSchedule,
   updatePayoutSchedule,
-  updateScheduleLastRun,
-  getBeneficiariesWithMachines,
-  getMachinesByBeneficiary,
-  logAction,
 } from '@/lib/vending';
-
-const normalizeDateTime = (value?: string, endOfDay = false): string => {
-  if (!value) return new Date().toISOString();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date(`${value}${endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z'}`).toISOString();
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date().toISOString();
-  }
-  return parsed.toISOString();
-};
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -35,11 +15,18 @@ export async function GET(request: NextRequest) {
     // Получение истории выплат
     if (action === 'history') {
       const beneficiary_id = searchParams.get('beneficiary_id') || undefined;
+      const client_id = searchParams.get('client_id') || undefined;
       const status = searchParams.get('status') || undefined;
       const date_from = searchParams.get('date_from') || undefined;
       const date_to = searchParams.get('date_to') || undefined;
 
-      const payouts = getPayoutHistory({ beneficiary_id, status, date_from, date_to });
+      const payouts = getPayoutHistory({
+        beneficiary_id,
+        client_id: client_id ? parseInt(client_id, 10) : undefined,
+        status,
+        date_from,
+        date_to,
+      });
       return NextResponse.json({ payouts });
     }
 
@@ -65,14 +52,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ schedule });
     }
 
-    // Получение бенефициаров с привязанными автоматами
-    if (action === 'beneficiaries_with_machines') {
-      const beneficiary_ids = getBeneficiariesWithMachines();
-      return NextResponse.json({ beneficiary_ids });
-    }
-
     return NextResponse.json({
-      actions: ['history', 'details', 'schedule', 'beneficiaries_with_machines'],
+      actions: ['history', 'details', 'schedule'],
     });
   } catch (error) {
     console.error('[Payouts API] Error:', error);
@@ -87,261 +68,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { action } = body;
-
-    // Расчет суммы к выплате (preview)
-    if (action === 'calculate') {
-      const { beneficiary_id, end_date } = body;
-
-      if (!beneficiary_id) {
-        return NextResponse.json({ error: 'beneficiary_id required' }, { status: 400 });
-      }
-
-      // Получаем автоматы бенефициара
-      const machines = getMachinesByBeneficiary(beneficiary_id);
-      if (machines.length === 0) {
-        return NextResponse.json({
-          calculation: {
-            beneficiary_id,
-            period_start: end_date || new Date().toISOString().split('T')[0],
-            period_end: end_date || new Date().toISOString().split('T')[0],
-            machines: [],
-            total_sales: 0,
-            total_commission: 0,
-            payout_amount: 0,
-          },
-          message: 'No machines assigned to this beneficiary',
-        });
-      }
-
-      // Получаем транзакции из Vendista (если настроен)
-      let transactions: { id: string | number; machine_id: string | number; date: string; amount: number }[] = [];
-
-      if (isVendistaConfigured()) {
-        const client = createVendistaClient();
-        const terminal_ids = machines
-          .map(m => m.terminal_id)
-          .filter((id) => id !== null && id !== undefined);
-        const machine_ids = machines
-          .filter(m => !m.terminal_id)
-          .map(m => m.vendista_id)
-          .filter((id) => id !== null && id !== undefined);
-
-        if (machine_ids.length === 0 && terminal_ids.length === 0) {
-          console.warn('[Payouts] No machine_ids found for machines');
-        } else {
-          // Определяем период для запроса - берем широкий диапазон
-          const endDate = normalizeDateTime(end_date, true);
-          const startDate = machines.reduce((earliest, m) => {
-            const assignedDate = normalizeDateTime(m.assignment?.assigned_at || endDate);
-            return assignedDate < earliest ? assignedDate : earliest;
-          }, endDate);
-
-          transactions = await client.fetchTransactionsForMachines({
-            machine_ids,
-            terminal_ids,
-            startDate,
-            endDate,
-          });
-        }
-      }
-
-      const calculation = calculatePayout(beneficiary_id, transactions, normalizeDateTime(end_date, true));
-
-      return NextResponse.json({
-        calculation,
-        transactions_count: transactions.length,
-      });
-    }
-
-    // Создание и выполнение выплаты
-    if (action === 'execute') {
-      const { beneficiary_id, end_date, virtual_account, user_id } = body;
-
-      if (!beneficiary_id) {
-        return NextResponse.json({ error: 'beneficiary_id required' }, { status: 400 });
-      }
-
-      // Получаем автоматы и транзакции
-      const machines = getMachinesByBeneficiary(beneficiary_id);
-      if (machines.length === 0) {
-        return NextResponse.json({ error: 'No machines assigned to this beneficiary' }, { status: 400 });
-      }
-
-      let transactions: { id: string | number; machine_id: string | number; date: string; amount: number }[] = [];
-
-      if (isVendistaConfigured()) {
-        const client = createVendistaClient();
-        const terminal_ids = machines
-          .map(m => m.terminal_id)
-          .filter((id) => id !== null && id !== undefined);
-        const machine_ids = machines
-          .filter(m => !m.terminal_id)
-          .map(m => m.vendista_id)
-          .filter((id) => id !== null && id !== undefined);
-
-        if (machine_ids.length > 0 || terminal_ids.length > 0) {
-          const endDate = normalizeDateTime(end_date, true);
-          const startDate = machines.reduce((earliest, m) => {
-            const assignedDate = normalizeDateTime(m.assignment?.assigned_at || endDate);
-            return assignedDate < earliest ? assignedDate : earliest;
-          }, endDate);
-
-          transactions = await client.fetchTransactionsForMachines({
-            machine_ids,
-            terminal_ids,
-            startDate,
-            endDate,
-          });
-        }
-      }
-
-      const calculation = calculatePayout(beneficiary_id, transactions, normalizeDateTime(end_date, true));
-
-      if (calculation.payout_amount <= 0) {
-        return NextResponse.json({
-          error: 'No payout amount to execute',
-          calculation,
-        }, { status: 400 });
-      }
-
-      // Создаем запись о выплате
-      const payout = createPayout(calculation, user_id);
-
-      // Пытаемся отправить в Cyclops (если передан virtual_account)
-      if (virtual_account) {
-        updatePayoutStatus(payout.id, 'processing');
-
-        try {
-          // Здесь будет интеграция с Cyclops API для создания deal/перевода
-          // Пока имитируем успешный ответ
-          const cyclops_response = {
-            deal_id: `simulated_deal_${payout.id}_${Date.now()}`,
-            status: 'executed',
-          };
-
-          updatePayoutStatus(
-            payout.id,
-            'completed',
-            cyclops_response.deal_id,
-            JSON.stringify(cyclops_response)
-          );
-
-          logAction('execute_payout', 'beneficiary_payout', String(payout.id), JSON.stringify({
-            user_id,
-            virtual_account,
-            amount: calculation.payout_amount,
-            cyclops_deal_id: cyclops_response.deal_id,
-          }));
-
-          return NextResponse.json({
-            success: true,
-            payout: getPayoutById(payout.id),
-            cyclops_deal_id: cyclops_response.deal_id,
-          });
-        } catch (error) {
-          const error_message = error instanceof Error ? error.message : 'Unknown Cyclops error';
-          updatePayoutStatus(payout.id, 'failed', undefined, undefined, error_message);
-
-          logAction('payout_failed', 'beneficiary_payout', String(payout.id), JSON.stringify({
-            user_id,
-            error: error_message,
-          }));
-
-          return NextResponse.json({
-            error: 'Failed to execute payout via Cyclops',
-            payout: getPayoutById(payout.id),
-            details: error_message,
-          }, { status: 500 });
-        }
-      }
-
-      // Если virtual_account не передан - просто создаем запись pending
-      return NextResponse.json({
-        success: true,
-        payout,
-        message: 'Payout created but not executed (no virtual_account provided)',
-      });
-    }
-
-    // Выполнение автоматических выплат для всех бенефициаров
-    if (action === 'execute_scheduled') {
-      const { user_id } = body;
-
-      const beneficiary_ids = getBeneficiariesWithMachines();
-      const results: Array<{ beneficiary_id: string; success: boolean; payout_id?: number; error?: string }> = [];
-
-      for (const beneficiary_id of beneficiary_ids) {
-        try {
-          const machines = getMachinesByBeneficiary(beneficiary_id);
-          let transactions: { id: string | number; machine_id: string | number; date: string; amount: number }[] = [];
-
-          if (isVendistaConfigured()) {
-            const client = createVendistaClient();
-              const machine_ids = machines
-                .map(m => m.vendista_id)
-                .filter((id) => id !== null && id !== undefined);
-
-              if (machine_ids.length > 0) {
-                const endDate = normalizeDateTime(undefined, true);
-                const startDate = machines.reduce((earliest, m) => {
-                  const assignedDate = normalizeDateTime(m.assignment?.assigned_at || endDate);
-                  return assignedDate < earliest ? assignedDate : earliest;
-                }, endDate);
-
-                transactions = await client.fetchTransactionsForMachines({
-                  machine_ids,
-                  startDate,
-                  endDate,
-                });
-              }
-          }
-
-          const calculation = calculatePayout(beneficiary_id, transactions);
-
-          if (calculation.payout_amount > 0) {
-            const payout = createPayout(calculation, user_id);
-            // В автоматическом режиме выплата создается со статусом pending
-            // для последующего подтверждения или автоматической отправки
-            results.push({
-              beneficiary_id,
-              success: true,
-              payout_id: payout.id,
-            });
-          } else {
-            results.push({
-              beneficiary_id,
-              success: true,
-              error: 'No payout amount',
-            });
-          }
-        } catch (error) {
-          results.push({
-            beneficiary_id,
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-        }
-      }
-
-      updateScheduleLastRun();
-
-      logAction('scheduled_payouts', 'payout_schedule', null, JSON.stringify({
-        user_id,
-        total: beneficiary_ids.length,
-        successful: results.filter(r => r.success && r.payout_id).length,
-      }));
-
-      return NextResponse.json({
-        success: true,
-        results,
-        summary: {
-          total: beneficiary_ids.length,
-          created: results.filter(r => r.success && r.payout_id).length,
-          skipped: results.filter(r => r.success && !r.payout_id).length,
-          failed: results.filter(r => !r.success).length,
-        },
-      });
-    }
 
     // Обновление настроек расписания
     if (action === 'update_schedule') {
@@ -368,7 +94,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: 'Unknown action. Available: calculate, execute, execute_scheduled, update_schedule' },
+      { error: 'Unknown action. Available: update_schedule. Расчёт выплат — через /api/clients/[clientId]/payout' },
       { status: 400 }
     );
   } catch (error) {

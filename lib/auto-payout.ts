@@ -121,20 +121,15 @@ export async function executeAutoPayoutForClient(
       const vendistaClient = createVendistaClient();
       const terminalIds = machines
         .map(m => m.terminal_id)
-        .filter((t) => t !== null && t !== undefined);
-      const machineIds = machines
-        .filter(m => !m.terminal_id)
-        .map(m => m.vendista_id)
-        .filter((t) => t !== null && t !== undefined);
+        .filter((t): t is string => t !== null && t !== undefined);
 
-      if (terminalIds.length > 0 || machineIds.length > 0) {
+      if (terminalIds.length > 0) {
         const startDate = machines.reduce((earliest, m) => {
           const d = m.assigned_at;
           return d < earliest ? d : earliest;
         }, endDate);
 
         transactions = await vendistaClient.fetchTransactionsForMachines({
-          machine_ids: machineIds,
           terminal_ids: terminalIds,
           startDate,
           endDate,

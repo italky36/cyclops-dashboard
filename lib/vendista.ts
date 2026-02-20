@@ -115,17 +115,8 @@ const normalizeSaleItem = (item: Record<string, unknown>): VendistaTransaction |
     normalizedId = `${machineId}_${dateStr}`;
   }
 
-  // Vendista API может возвращать суммы в копейках или рублях в зависимости от endpoint
-  // Если сумма больше 1000, скорее всего это копейки (напр. 10000 копеек = 100 рублей)
-  // Если меньше 1000, скорее всего это уже рубли
-  let amountRub: number;
-  if (amountNum >= 1000) {
-    // Вероятно копейки - конвертируем в рубли
-    amountRub = Math.round(amountNum) / 100;
-  } else {
-    // Вероятно уже рубли - оставляем как есть
-    amountRub = Math.round(amountNum * 100) / 100;
-  }
+  // Vendista API всегда возвращает суммы в копейках — конвертируем в рубли
+  const amountRub = Math.round(amountNum) / 100;
 
   return {
     id: normalizedId,
@@ -151,9 +142,14 @@ export function isVendistaConfigured(): boolean {
 
 // ============ КЛИЕНТ API ============
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export class VendistaClient {
   private baseUrl: string;
   private token: string;
+  private requestDelay = 300; // задержка между запросами (мс)
+  private maxRetries = 4; // макс. кол-во повторов при 429
+  private lastRequestTime = 0;
 
   constructor(baseUrl?: string, token?: string) {
     this.baseUrl = baseUrl || getVendistaBaseUrl();
@@ -183,42 +179,63 @@ export class VendistaClient {
       });
     }
 
+    // Задержка между запросами для избежания 429
+    const now = Date.now();
+    const elapsed = now - this.lastRequestTime;
+    if (elapsed < this.requestDelay) {
+      await delay(this.requestDelay - elapsed);
+    }
+
     console.info(`[Vendista] ${method} ${url.pathname}`, { params });
 
-    try {
-      const response = await axios({
-        method,
-        url: url.toString(),
-        data: method === "POST" ? params : undefined,
-        headers: {
-          "Accept": "text/plain",
-        },
-        timeout: 60000,
-        // Vendista может возвращать text/plain с JSON внутри
-        transformResponse: (data) => {
-          if (typeof data === "string") {
-            try {
-              return JSON.parse(data);
-            } catch {
-              return data;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        this.lastRequestTime = Date.now();
+        const response = await axios({
+          method,
+          url: url.toString(),
+          data: method === "POST" ? params : undefined,
+          headers: {
+            "Accept": "text/plain",
+          },
+          timeout: 60000,
+          // Vendista может возвращать text/plain с JSON внутри
+          transformResponse: (data) => {
+            if (typeof data === "string") {
+              try {
+                return JSON.parse(data);
+              } catch {
+                return data;
+              }
             }
+            return data;
+          },
+        });
+
+        console.info(`[Vendista] Response status: ${response.status}`);
+
+        return response.data;
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          const status = error.response?.status;
+
+          // Retry при 429 с экспоненциальной задержкой
+          if (status === 429 && attempt < this.maxRetries) {
+            const backoff = this.requestDelay * Math.pow(2, attempt + 1); // 600, 1200, 2400, 4800
+            console.warn(`[Vendista] 429 rate limited, retry ${attempt + 1}/${this.maxRetries} after ${backoff}ms`);
+            await delay(backoff);
+            continue;
           }
-          return data;
-        },
-      });
 
-      console.info(`[Vendista] Response status: ${response.status}`);
-
-      return response.data;
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
-        const data = error.response?.data;
-        console.error(`[Vendista] Error: ${status}`, data);
-        throw new Error(`Vendista API error: ${status} - ${JSON.stringify(data)}`);
+          const data = error.response?.data;
+          console.error(`[Vendista] Error: ${status}`, data);
+          throw new Error(`Vendista API error: ${status} - ${JSON.stringify(data)}`);
+        }
+        throw error;
       }
-      throw error;
     }
+
+    throw new Error('Vendista API: max retries exceeded');
   }
 
   /**
@@ -332,7 +349,22 @@ export class VendistaClient {
       console.log('[Vendista] fetchTransactions first item:', allItems[0]);
     }
 
-    const normalized = allItems
+    // Фильтруем возвраты (reverse_id != 0) и неуспешные транзакции (result != 1, status != 1)
+    const validItems = allItems.filter((item) => {
+      const obj = item as Record<string, unknown>;
+      const reverseId = Number(obj.reverse_id ?? 0);
+      const result = obj.result !== undefined ? Number(obj.result) : 1;
+      const status = obj.status !== undefined ? Number(obj.status) : 1;
+      return reverseId === 0 && result === 1 && status === 1;
+    });
+
+    console.log('[Vendista] fetchTransactions after filtering:', {
+      before: allItems.length,
+      after: validItems.length,
+      filtered_out: allItems.length - validItems.length,
+    });
+
+    const normalized = validItems
       .map((item) => normalizeSaleItem(item as Record<string, unknown>))
       .filter((item): item is VendistaTransaction => !!item);
 
@@ -345,135 +377,29 @@ export class VendistaClient {
   }
 
   /**
-   * Получение списка продаж по автомату (sales/list)
-   */
-  async fetchSalesList(params: {
-    machine_id: string | number;
-    dateFrom?: string;
-    dateTo?: string;
-  }): Promise<VendistaTransaction[]> {
-    const requestParams: Record<string, unknown> = {
-      MachineId: String(params.machine_id),
-    };
-
-    if (params.dateFrom) {
-      requestParams.DateFrom = params.dateFrom;
-    }
-    if (params.dateTo) {
-      requestParams.DateTo = params.dateTo;
-    }
-
-    console.log('[Vendista] fetchSalesList request:', { params, requestParams });
-
-    // Получаем все страницы с пагинацией
-    const allItems: unknown[] = [];
-    let pageNumber = 1;
-    let hasMorePages = true;
-
-    while (hasMorePages) {
-      const pageParams = { ...requestParams, PageNumber: pageNumber };
-      const response = await this.request<unknown>("GET", "/sales/list", pageParams);
-
-      console.log(`[Vendista] fetchSalesList page ${pageNumber} response type:`, typeof response);
-
-      const responseObj = response as {
-        items?: unknown[];
-        data?: unknown[];
-        result?: unknown[];
-        items_count?: number;
-        items_per_page?: number;
-        page_number?: number;
-      };
-
-      const items = Array.isArray(response)
-        ? response
-        : responseObj.items ?? responseObj.data ?? responseObj.result ?? [];
-
-      if (!Array.isArray(items)) {
-        console.warn(`[Vendista] fetchSalesList page ${pageNumber} items is not an array`);
-        break;
-      }
-
-      allItems.push(...items);
-      console.log(`[Vendista] fetchSalesList page ${pageNumber}: got ${items.length} items, total: ${allItems.length}`);
-
-      // Проверяем пагинацию
-      const itemsCount = responseObj.items_count;
-      const itemsPerPage = responseObj.items_per_page || 50;
-
-      if (itemsCount && allItems.length < itemsCount) {
-        pageNumber++;
-        hasMorePages = true;
-      } else if (items.length === itemsPerPage) {
-        // Если получили полную страницу, возможно есть ещё данные
-        pageNumber++;
-        hasMorePages = true;
-      } else {
-        hasMorePages = false;
-      }
-
-      // Защита от бесконечного цикла
-      if (pageNumber > 100) {
-        console.warn('[Vendista] fetchSalesList: reached max page limit (100)');
-        break;
-      }
-    }
-
-    console.log('[Vendista] fetchSalesList total items fetched:', allItems.length);
-
-    const normalized = allItems
-      .map((item) => normalizeSaleItem(item as Record<string, unknown>))
-      .filter((item): item is VendistaTransaction => !!item);
-
-    console.log('[Vendista] fetchSalesList normalized count:', normalized.length);
-
-    return normalized;
-  }
-
-  /**
-   * Получение продаж по нескольким автоматам за период
-   * @param params.machine_ids - массив vendista_id автоматов (MachineId)
-   * @param params.terminal_ids - массив terminal_id (fallback)
+   * Получение транзакций по нескольким автоматам за период
+   * @param params.terminal_ids - массив terminal_id автоматов
    */
   async fetchTransactionsForMachines(params: {
-    machine_ids?: (string | number)[];
-    terminal_ids?: (string | number)[];
+    terminal_ids: (string | number)[];
     startDate: string;
     endDate: string;
   }): Promise<VendistaTransaction[]> {
-    const machineIds = params.machine_ids?.filter((id) => id !== null && id !== undefined) || [];
-    const terminalIds = params.terminal_ids?.filter((id) => id !== null && id !== undefined) || [];
+    const terminalIds = params.terminal_ids.filter((id) => id !== null && id !== undefined);
 
-    // Vendista API не поддерживает batch-запросы, делаем последовательные запросы
     const allTransactions: VendistaTransaction[] = [];
 
-    if (terminalIds.length > 0) {
-      for (const term_id of terminalIds) {
-        try {
-          const transactions = await this.fetchTransactions({
-            term_id,
-            startDate: params.startDate,
-            endDate: params.endDate,
-          });
-          allTransactions.push(...transactions);
-        } catch (error) {
-          console.error(`[Vendista] Failed to fetch transactions for terminal ${term_id}:`, error);
-        }
-      }
-    }
-
-    if (machineIds.length > 0) {
-      for (const machine_id of machineIds) {
-        try {
-          const sales = await this.fetchSalesList({
-            machine_id,
-            dateFrom: params.startDate,
-            dateTo: params.endDate,
-          });
-          allTransactions.push(...sales);
-        } catch (error) {
-          console.error(`[Vendista] Failed to fetch sales for machine ${machine_id}:`, error);
-        }
+    for (const term_id of terminalIds) {
+      try {
+        const transactions = await this.fetchTransactions({
+          term_id,
+          startDate: params.startDate,
+          endDate: params.endDate,
+        });
+        console.log(`[Vendista] Terminal ${term_id}: got ${transactions.length} transactions, machine_ids: ${Array.from(new Set(transactions.map(t => t.machine_id))).join(',')}`);
+        allTransactions.push(...transactions);
+      } catch (error) {
+        console.error(`[Vendista] FAILED to fetch for terminal ${term_id}:`, error);
       }
     }
 

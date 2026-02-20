@@ -76,12 +76,17 @@ export async function POST(
       ? body.commission_percent
       : client.commission_percent ?? 0;
 
+    const assignedAt = typeof body.assigned_at === 'string' && body.assigned_at
+      ? new Date(body.assigned_at).toISOString()
+      : undefined;
+
     for (const machine_id of machineIds) {
       assignMachineToClient({
         machine_id,
         client_id: id,
         commission_percent: commissionBase,
         created_by: body.user_id,
+        assigned_at: assignedAt,
       });
     }
 
